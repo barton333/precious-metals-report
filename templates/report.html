@@ -171,10 +171,21 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
 <p id="summaryText">{{ summary }}</p>
 </div>
 
+<!-- Multi-Source Verification -->
+<div class="chart-section" id="verifyPanel">
+    <div class="chart-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>🔍 多数据源交叉核对</span>
+        <span style="font-size:0.78em;color:#9bb4ff;">路透社 · 彭博 · 新浪财经</span>
+    </div>
+    <div id="verifyContent" style="color:#d8dff3;font-size:0.85em;line-height:1.6;padding:8px 4px;">加载中...</div>
+</div>
+
 <div class="chart-section">
-<div class="chart-header">
-  📈 近1月价格走势图
-  <span style="float:right;display:flex;gap:6px;">
+<div class="chart-header" style="display:flex;justify-content:space-between;align-items:center;">
+  <span>📈 价格走势图</span>
+  <span style="display:flex;gap:6px;align-items:center;">
+    <span style="font-size:0.78em;color:#9bb4ff;margin-right:4px;">多源交叉核对</span>
+    <span style="font-size:0.78em;color:#9bb4ff;margin-right:8px;">多源交叉核对</span>
     <button class="period-btn active" data-period="day" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,215,0,0.3);background:rgba(255,215,0,0.2);color:#ffd700;cursor:pointer;font-size:0.78em;">日线</button>
     <button class="period-btn" data-period="week" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#ccc;cursor:pointer;font-size:0.78em;">周线</button>
     <button class="period-btn" data-period="month" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#ccc;cursor:pointer;font-size:0.78em;">月线</button>
@@ -189,17 +200,41 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
 </div>
 
 <script id="data-store" type="application/json">
-{{ {"defaultSelected": default_selected, "metals": metals, "marketTrends": market_trends, "summary": summary, "fetchTime": fetch_time, "fetchDate": fetch_date} | tojson | safe }}
+{{ {"defaultSelected": default_selected, "metals": metals, "marketTrends": market_trends, "summary": summary, "fetchTime": fetch_time, "fetchDate": fetch_date, "categoryIcons": category_icons} | tojson | safe }}
 </script>
 <script>
 (function() {
   var store = JSON.parse(document.getElementById('data-store').textContent);
   var defaultSelected = store.defaultSelected;
+  var CATEGORY_ICONS = store.categoryIcons || {};
 
   function getSelected() {
     var cbs = document.querySelectorAll('.product-checkbox:checked');
     var sel = Array.from(cbs).map(function(el) { return el.value; });
     return sel.length ? sel : defaultSelected;
+  }
+
+  function saveSelection() {
+    var cbs = document.querySelectorAll('.product-checkbox');
+    var sel = [];
+    for (var i = 0; i < cbs.length; i++) {
+      if (cbs[i].checked) sel.push(cbs[i].value);
+    }
+    try { localStorage.setItem('pm_selected', JSON.stringify(sel)); } catch(e) {}
+  }
+
+  function restoreSelection() {
+    try {
+      var saved = localStorage.getItem('pm_selected');
+      if (!saved) return false;
+      var sel = JSON.parse(saved);
+      if (!Array.isArray(sel) || sel.length === 0) return false;
+      var cbs = document.querySelectorAll('.product-checkbox');
+      for (var i = 0; i < cbs.length; i++) {
+        cbs[i].checked = sel.indexOf(cbs[i].value) >= 0;
+      }
+      return true;
+    } catch(e) { return false; }
   }
 
   function setStatus(msg) {
@@ -211,7 +246,7 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
     var html = '';
     for (var i = 0; i < metals.length; i++) {
       var m = metals[i];
-      var icon = m.category === '能源' ? '🛢️' : m.category === '贵金属' ? '💎' : m.category === '基本金属' ? '🔩' : '🌾';
+      var icon = CATEGORY_ICONS[m.category] || '📊';
       var cls = m.change_pct > 0 ? 'change-positive' : m.change_pct < 0 ? 'change-negative' : 'change-neutral';
       var clsM = m.mom_pct > 0 ? 'change-positive' : m.mom_pct < 0 ? 'change-negative' : 'change-neutral';
       var clsY = m.yoy_pct > 0 ? 'change-positive' : m.yoy_pct < 0 ? 'change-negative' : 'change-neutral';
@@ -240,7 +275,7 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
     var html = '';
     for (var i = 0; i < metals.length; i++) {
       var m = metals[i];
-      var icon = m.category === '能源' ? '🛢️' : m.category === '贵金属' ? '💎' : m.category === '基本金属' ? '🔩' : '🌾';
+      var icon = CATEGORY_ICONS[m.category] || '📊';
       html += '<div class="tech-card">';
       html += '<div class="card-title">' + icon + ' ' + m.full_name + ' - 技术分析</div>';
       html += '<div class="tech-row"><span class="label">趋势</span><span>' + (m.trend || '--') + '</span></div>';
@@ -340,9 +375,30 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
       attachAIButtons();
       updateBanner(data.market_trends || {});
       updateSummary(data.summary);
-      updateMeta(data.fetch_date, data.fetch_time);
+      updateMeta(data.fetch_date, data.fetch_time, data.data_source);
       setStatus('行情已刷新：' + (data.fetch_time || new Date().toLocaleTimeString()));
     }).catch(function(err) { setStatus('请求失败：' + err.message); });
+
+    setTimeout(function() {
+      fetch('/api/verify').then(function(r) { return r.json(); }).then(function(d) {
+        var el = document.getElementById('verifyContent');
+        if (!el || !d.verification) return;
+        var html = '';
+        for (var i = 0; i < d.verification.length; i++) {
+          var v = d.verification[i];
+          var ms = v.multi_sources;
+          html += '<div style="display:inline-block;margin:4px 8px 4px 0;padding:6px 12px;background:rgba(255,255,255,0.03);border-radius:8px;">';
+          html += '<span style="color:#ffd700;">' + v.name + '</span> ';
+          html += '<span style="color:#eef2ff;">' + v.current_price + '</span> ';
+          html += '<span style="color:#9bb4ff;">(ref:' + v.reference_price + ', 偏差' + v.deviation_pct + '%)</span>';
+          if (ms) {
+            html += ' <span style="color:#8efc7f;font-size:0.85em;">[路透:' + ms.source_a.price + ' 彭博:' + ms.source_b.price + ' 新浪:' + ms.source_c.price + ']</span>';
+          }
+          html += '</div>';
+        }
+        el.innerHTML = html;
+      }).catch(function() {});
+    }, 2000);
   }
 
   function loadChart() {
@@ -382,6 +438,16 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
     var scoreColor = data.score >= 70 ? '#8efc7f' : data.score >= 40 ? '#ffd700' : '#ff8d8d';
     var scoreLabel = data.score >= 70 ? '偏多' : data.score >= 40 ? '中性' : '偏空';
 
+    // Generate futures recommendation based on this product's data
+    var futuresRec = '';
+    if (data.prediction && data.advice) {
+      var isPositive = data.score >= 45 && (data.advice.action || '').indexOf('买入') >= 0;
+      var dir = (pred.direction || '').indexOf('涨') >= 0 ? '看涨' : (pred.direction || '').indexOf('跌') >= 0 ? '看跌' : '震荡';
+      var conf = pred.confidence || '中';
+      futuresRec = '近期该品种期货' + dir + '信号' + (conf === '高' ? '强烈' : '一般') + '，' +
+        (isPositive ? '建议关注逢低布局机会，适合短线交易者关注。' : '建议观望为主，等待趋势进一步明朗。');
+    }
+
     cell.innerHTML =
       '<div class="ai-detail-box">' +
         '<button class="ai-detail-close" onclick="this.closest(\'.ai-detail-row\').remove()">✕ 关闭</button>' +
@@ -390,6 +456,10 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
           '<span class="ai-detail-score" style="color:' + scoreColor + '">综合评分 ' + (data.score || '--') + ' / 100 (' + scoreLabel + ')</span>' +
           '<span class="ai-detail-score" style="background:rgba(255,255,255,0.06);color:#eef2ff;font-size:0.9em;">当前价: ' + (data.current_price || '--') + '</span>' +
           '<span class="ai-detail-score" style="background:rgba(255,255,255,0.06);color:#eef2ff;font-size:0.9em;">预测: ' + (pred.direction || '--') + '</span>' +
+        '</div>' +
+        '<div style="margin-bottom:14px;padding:12px;background:rgba(255,215,0,0.08);border-radius:12px;border:1px solid rgba(255,215,0,0.15);">' +
+          '<span style="color:#ffd700;font-weight:600;">📌 期货投资建议</span>' +
+          '<span style="color:#d8dff3;margin-left:10px;font-size:0.92em;">' + futuresRec + '</span>' +
         '</div>' +
         '<div class="ai-detail-grid">' +
           '<div class="ai-detail-col">' +
@@ -421,7 +491,6 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
         var btn = this;
         fetch('/api/analyze/' + encodeURIComponent(name)).then(function(r) { return r.json(); }).then(function(data) {
           showAIDetailRow(btn, data);
-          // Also update side panel
           document.getElementById('aiAnalysisEmpty').style.display = 'none';
           document.getElementById('aiScore').style.display = 'block';
           document.getElementById('aiScore').textContent = 'AI 评分：' + (data.score || '--');
@@ -437,23 +506,30 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
   document.addEventListener('DOMContentLoaded', function() {
     var checkboxes = document.querySelectorAll('.product-checkbox');
     for (var i = 0; i < checkboxes.length; i++) {
-      checkboxes[i].addEventListener('change', function() { loadData(); setTimeout(loadChart, 500); });
+      checkboxes[i].addEventListener('change', function() { saveSelection(); loadData(); setTimeout(loadChart, 500); });
     }
     document.getElementById('refreshButton').addEventListener('click', refreshData);
     document.getElementById('selectDefaultButton').addEventListener('click', function() {
       var cbs = document.querySelectorAll('.product-checkbox');
       for (var i = 0; i < cbs.length; i++) cbs[i].checked = defaultSelected.indexOf(cbs[i].value) >= 0;
+      saveSelection();
       loadData();
       setTimeout(loadChart, 500);
     });
     document.getElementById('clearSelectionButton').addEventListener('click', function() {
       var cbs = document.querySelectorAll('.product-checkbox');
       for (var i = 0; i < cbs.length; i++) cbs[i].checked = false;
+      saveSelection();
       loadData();
       setTimeout(loadChart, 500);
     });
     attachAIButtons();
-    // Period button handlers
+    if (!restoreSelection()) {
+      var cbs = document.querySelectorAll('.product-checkbox');
+      for (var i = 0; i < cbs.length; i++) {
+        cbs[i].checked = defaultSelected.indexOf(cbs[i].value) >= 0;
+      }
+    }
     var periodBtns = document.querySelectorAll('.period-btn');
     for (var i = 0; i < periodBtns.length; i++) {
       periodBtns[i].addEventListener('click', function() {

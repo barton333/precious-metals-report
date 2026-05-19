@@ -10,7 +10,7 @@ if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 
 from flask import Flask, render_template, jsonify, request
-from fetcher import Fetcher, INVESTMENT_ITEMS, CATEGORIES, DEFAULT_SELECTED
+from fetcher import Fetcher, INVESTMENT_ITEMS, CATEGORIES, DEFAULT_SELECTED, CATEGORY_ICONS
 from analyzer import Analyzer
 from analysis_ai import analyze_product
 
@@ -74,6 +74,7 @@ def index():
                            fetch_date=data.get('fetch_date', ''),
                            categories=CATEGORIES,
                            all_products=INVESTMENT_ITEMS,
+                           category_icons=CATEGORY_ICONS,
                            default_selected=DEFAULT_SELECTED)
 
 
@@ -125,6 +126,7 @@ def api_data():
         'fetch_date': data.get('fetch_date', ''),
         'data_source': data.get('data_source', '参考数据'),
         'reference_prices': data.get('reference_prices', {}),
+        'multi_sources': data.get('multi_sources', {}),
     })
 
 
@@ -148,11 +150,11 @@ def api_products():
 
 @app.route('/api/history')
 def api_history():
-    """API: 获取走势数据，支持 period=day|week|month 参数"""
+    """API: 获取走势数据，日线/周线/月线"""
     selected = request.args.getlist('selected')
     if not selected:
         selected = DEFAULT_SELECTED
-    period = request.args.get('period', 'month')  # day, week, month
+    period = request.args.get('period', 'month')
 
     data = get_all_data()
     if not data:
@@ -167,22 +169,26 @@ def api_history():
         if metal['name'] not in selected:
             continue
 
-        hist = metal.get('history_1m')
+        hist = metal.get('history_1y')
         if hist is None or hist.empty:
             continue
 
         df = hist.copy()
 
-        if period == 'week':
-            # 按周聚合：取每周五的收盘价
+        if period == 'day':
+            # 日线：近1个月（约22个交易日）
+            df = df.tail(22)
+        elif period == 'week':
+            # 周线：近6个月（约26根周K线）
             df = df.resample('W-FRI').last().dropna()
-        elif period == 'day':
-            # 日线：使用全部可用数据
-            pass  # use the original daily data
-        # else 'month': already daily data (used as monthly view)
+            df = df.tail(26)
+        elif period == 'month':
+            # 月线：近1年（约12根月K线）
+            df = df.resample('ME').last().dropna()
+            df = df.tail(12)
 
-        dates = df.index.strftime('%Y-%m-%d').tolist()
-        closes = [round(v, 2) for v in df['Close'].tolist()]
+        dates = df.index.astype(str).tolist()
+        closes = [round(float(v), 2) for v in df['Close'].tolist()]
         result[metal['name']] = {
             'name': metal['full_name'],
             'dates': dates,
@@ -231,13 +237,14 @@ def api_analyze(product_name):
 
 @app.route('/api/verify')
 def api_verify():
-    """API: 价格验证 — 返回当前价与国际参考价的对比"""
+    """API: 价格验证 — 返回当前价与国际参考价的对比 + 多数据源交叉核对"""
     data = get_all_data()
     if not data:
         return jsonify({'error': '无数据'}), 500
 
     metals = data.get('metals', [])
     refs = data.get('reference_prices', {})
+    multis = data.get('multi_sources', {})
 
     verification = []
     for m in metals:
@@ -246,7 +253,7 @@ def api_verify():
         ref_price = ref.get('reference_price', 0)
         current = m['price']
         deviation = round(((current - ref_price) / ref_price) * 100, 2) if ref_price else 0
-        verification.append({
+        item = {
             'name': name,
             'full_name': m['full_name'],
             'current_price': current,
@@ -255,7 +262,11 @@ def api_verify():
             'deviation_pct': deviation,
             'source': ref.get('source', '模拟数据'),
             'status': '正常' if abs(deviation) < 5 else '偏差较大',
-        })
+        }
+        # 多源数据
+        if name in multis:
+            item['multi_sources'] = multis[name]
+        verification.append(item)
 
     return jsonify({
         'data_source': data.get('data_source', '未知'),

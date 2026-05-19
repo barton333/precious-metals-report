@@ -59,6 +59,7 @@ class Analyzer:
             'fetch_date': data.get('fetch_date', ''),
             'data_source': data.get('data_source', '参考数据'),
             'reference_prices': data.get('reference_prices', {}),
+            'multi_sources': data.get('multi_sources', {}),
             'summary': self.generate_summary(analyzed_metals, market_trends),
         }
         return result
@@ -66,7 +67,7 @@ class Analyzer:
     def _analyze_single_metal(self, metal):
         """分析单个投资品种的技术指标"""
         hist_5d = metal.get('history_5d')
-        hist_1m = metal.get('history_1m')
+        hist_1y = metal.get('history_1y')
         etf_hist = metal.get('etf_history')
 
         analysis = {
@@ -89,8 +90,8 @@ class Analyzer:
         }
 
         # ── 环比 (MoM): 对比1月前价格 ──────────────────────────
-        if hist_1m is not None and len(hist_1m) >= 2:
-            price_1m_ago = hist_1m['Close'].iloc[0]
+        if hist_1y is not None and len(hist_1y) >= 22:
+            price_1m_ago = hist_1y['Close'].iloc[-22]
             current_price = metal['price']
             mom = ((current_price - price_1m_ago) / price_1m_ago) * 100
             analysis['mom_pct'] = round(mom, 2)
@@ -154,13 +155,13 @@ class Analyzer:
                     else:
                         analysis['signal'] = '中性 ➖'
 
-        # ── 1月均线 (从1月历史计算) ────────────────────────────
-        if hist_1m is not None and len(hist_1m) >= 20:
-            closes_1m = hist_1m['Close']
-            analysis['sma_20'] = round(closes_1m.tail(20).mean(), 2)
-        if hist_1m is not None and len(hist_1m) >= 5:
-            closes_1m = hist_1m['Close']
-            analysis['sma_30'] = round(closes_1m.mean(), 2)
+        # ── 20日均线 (从6月历史取最近20天) ───────────────────
+        if hist_1y is not None and len(hist_1y) >= 20:
+            closes_20 = hist_1y['Close'].tail(20)
+            analysis['sma_20'] = round(closes_20.mean(), 2)
+        if hist_1y is not None and len(hist_1y) >= 30:
+            closes_30 = hist_1y['Close'].tail(30)
+            analysis['sma_30'] = round(closes_30.mean(), 2)
 
         # ── ETF 中期趋势 ──────────────────────────────────────
         if etf_hist is not None and len(etf_hist) >= 20:
@@ -176,7 +177,7 @@ class Analyzer:
 
         # Remove raw history data to keep result clean
         analysis.pop('history_5d', None)
-        analysis.pop('history_1m', None)
+        analysis.pop('history_1y', None)
         analysis.pop('etf_history', None)
 
         return analysis
