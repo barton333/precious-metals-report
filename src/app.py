@@ -35,8 +35,11 @@ def ensure_static():
 
 
 def get_all_data():
-    """获取并缓存全量数据"""
+    """获取并缓存全量数据（缓存优先，仅首次或刷新时重新生成）"""
     global _data_cache, _analyzed_cache
+    if _data_cache is not None and _analyzed_cache is not None:
+        return _analyzed_cache
+
     fetcher = Fetcher()
     analyzer = Analyzer()
 
@@ -143,37 +146,48 @@ def api_products():
 
 @app.route('/api/history')
 def api_history():
-    """API: 获取选中品种的1月历史走势数据"""
+    """API: 获取走势数据，支持 period=day|week|month 参数"""
     selected = request.args.getlist('selected')
     if not selected:
         selected = DEFAULT_SELECTED
+    period = request.args.get('period', 'month')  # day, week, month
 
     data = get_all_data()
     if not data:
         return jsonify({'error': '获取数据失败'}), 500
 
-    # Need raw data with history_1m DataFrames
     global _data_cache
     if _data_cache is None:
-        fetcher = Fetcher()
-        _data_cache = fetcher.fetch_data()
-
-    if not _data_cache:
-        return jsonify({'error': '无数据'}), 500
+        return jsonify({'error': '无原始数据'}), 500
 
     result = {}
     for metal in _data_cache.get('metals', []):
-        if metal['name'] in selected:
-            hist = metal.get('history_1m')
-            if hist is not None and not hist.empty:
-                dates = hist.index.strftime('%Y-%m-%d').tolist()
-                closes = [round(v, 2) for v in hist['Close'].tolist()]
-                result[metal['name']] = {
-                    'name': metal['full_name'],
-                    'dates': dates,
-                    'closes': closes,
-                }
-    return jsonify({'history': result})
+        if metal['name'] not in selected:
+            continue
+
+        hist = metal.get('history_1m')
+        if hist is None or hist.empty:
+            continue
+
+        df = hist.copy()
+
+        if period == 'week':
+            # 按周聚合：取每周五的收盘价
+            df = df.resample('W-FRI').last().dropna()
+        elif period == 'day':
+            # 日线：使用全部可用数据
+            pass  # use the original daily data
+        # else 'month': already daily data (used as monthly view)
+
+        dates = df.index.strftime('%Y-%m-%d').tolist()
+        closes = [round(v, 2) for v in df['Close'].tolist()]
+        result[metal['name']] = {
+            'name': metal['full_name'],
+            'dates': dates,
+            'closes': closes,
+        }
+
+    return jsonify({'history': result, 'period': period})
 
 
 @app.route('/api/analyze/<product_name>')

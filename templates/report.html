@@ -172,7 +172,14 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
 </div>
 
 <div class="chart-section">
-<div class="chart-header">📈 近1月价格走势图</div>
+<div class="chart-header">
+  📈 近1月价格走势图
+  <span style="float:right;display:flex;gap:6px;">
+    <button class="period-btn active" data-period="day" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,215,0,0.3);background:rgba(255,215,0,0.2);color:#ffd700;cursor:pointer;font-size:0.78em;">日线</button>
+    <button class="period-btn" data-period="week" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#ccc;cursor:pointer;font-size:0.78em;">周线</button>
+    <button class="period-btn" data-period="month" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#ccc;cursor:pointer;font-size:0.78em;">月线</button>
+  </span>
+</div>
 <div class="chart-wrapper">
 <canvas id="monthlyChart"></canvas>
 </div>
@@ -275,6 +282,25 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
   }
 
   var chartInstance = null;
+  var currentPeriod = 'day';
+
+  function switchPeriod(period) {
+    currentPeriod = period;
+    var btns = document.querySelectorAll('.period-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      if (b.getAttribute('data-period') === period) {
+        b.style.background = 'rgba(255,215,0,0.2)';
+        b.style.borderColor = 'rgba(255,215,0,0.3)';
+        b.style.color = '#ffd700';
+      } else {
+        b.style.background = 'transparent';
+        b.style.borderColor = 'rgba(255,255,255,0.15)';
+        b.style.color = '#ccc';
+      }
+    }
+    loadChart();
+  }
 
   function renderChart(data) {
     var canvas = document.getElementById('monthlyChart');
@@ -321,6 +347,7 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
     var selected = getSelected();
     var params = new URLSearchParams();
     for (var i = 0; i < selected.length; i++) params.append('selected', selected[i]);
+    params.append('period', currentPeriod);
     fetch('/api/history?' + params.toString()).then(function(r) { return r.json(); }).then(function(data) {
       if (data.history) renderChart(data.history);
     }).catch(function() {});
@@ -424,6 +451,13 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
       setTimeout(loadChart, 500);
     });
     attachAIButtons();
+    // Period button handlers
+    var periodBtns = document.querySelectorAll('.period-btn');
+    for (var i = 0; i < periodBtns.length; i++) {
+      periodBtns[i].addEventListener('click', function() {
+        switchPeriod(this.getAttribute('data-period'));
+      });
+    }
     setTimeout(loadData, 300);
     setTimeout(loadChart, 1000);
     setInterval(function() { loadData(); setTimeout(loadChart, 500); }, 300000);
