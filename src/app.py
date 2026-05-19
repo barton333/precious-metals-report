@@ -4,8 +4,10 @@ import os
 import json
 import logging
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the src directory itself to path so 'from fetcher import ...' works
+_src_dir = os.path.dirname(os.path.abspath(__file__))
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 from flask import Flask, render_template, jsonify, request
 from fetcher import Fetcher, INVESTMENT_ITEMS, CATEGORIES, DEFAULT_SELECTED
