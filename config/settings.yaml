@@ -1,0 +1,17 @@
+# 数据源配置
+data_source: "yfinance"
+
+# 报告模板路径
+report_template: "templates/report.html"
+
+# 输出目录
+output_dir: "reports"
+
+# 获取频率
+fetch_interval: "daily"
+
+# 货币单位
+currency: "USD"
+
+# 日志级别: DEBUG, INFO, WARNING, ERROR
+log_level: "INFO"

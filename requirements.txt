@@ -1,0 +1,11 @@
+requests
+pandas
+beautifulsoup4
+jinja2
+pyyaml
+matplotlib
+yfinance
+numpy
+flask
+flask-cors
+gunicorn

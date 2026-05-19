@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>贵金属与主流投资品种日报</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background:linear-gradient(135deg,#101025 0%,#1f1f3d 100%); color:#eef2ff; min-height:100vh; padding:18px; }
+.container { max-width:1180px; margin:0 auto; }
+.header { text-align:center; padding:26px 22px; margin-bottom:22px; background:rgba(255,215,0,0.08); border:1px solid rgba(255,215,0,0.18); border-radius:18px; }
+.header h1 { font-size:2em; letter-spacing:2px; color:#ffd700; margin-bottom:10px; }
+.header .subtitle { color:#ccb978; font-size:0.95em; }
+.header .meta { margin-top:12px; color:#d1d7ff; font-size:0.92em; }
+.controls-panel { display:grid; grid-template-columns:1.6fr 0.9fr; gap:20px; margin-bottom:20px; }
+.panel,.sentiment-banner,.stats-grid,.table-container,.tech-grid,.summary-box,.chart-section { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:18px; }
+.panel { padding:20px; }
+.panel-title { font-size:1.05em; font-weight:600; margin-bottom:14px; color:#ffd700; }
+.notice-box { padding:14px 16px; margin-bottom:16px; border-radius:14px; background:rgba(255,215,0,0.08); color:#f6f0be; border:1px solid rgba(255,215,0,0.18); }
+.categories-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; }
+.category-group { padding:14px; border-radius:14px; background:rgba(255,255,255,0.03); }
+.category-title { color:#ffd700; margin-bottom:10px; font-size:0.95em; font-weight:600; }
+.checkbox-label { display:block; margin-bottom:10px; cursor:pointer; color:#e3e7ff; font-size:0.95em; }
+.checkbox-label input { margin-right:8px; accent-color:#ffd700; }
+.action-group { display:grid; gap:12px; margin-bottom:16px; }
+.action-group button,.ai-button { width:100%; padding:14px 16px; color:#fff; border:none; border-radius:14px; background:rgba(255,215,0,0.16); cursor:pointer; transition:transform 0.2s,background 0.2s; }
+.action-group button:hover,.ai-button:hover { transform:translateY(-2px); background:rgba(255,215,0,0.22); }
+.status-box { padding:16px; border-radius:14px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); color:#d8dff3; }
+.sentiment-banner { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; padding:18px; margin-bottom:20px; }
+.sentiment-item { padding:16px; background:rgba(255,255,255,0.04); border-radius:16px; text-align:center; }
+.sentiment-item .label { color:#a9b3d7; font-size:0.82em; margin-bottom:6px; }
+.sentiment-item .value { font-size:1.4em; font-weight:700; }
+.sentiment-item .value.gold { color:#ffd700; }
+.sentiment-item .value.green { color:#8efc7f; }
+.sentiment-item .value.red { color:#ff8d8d; }
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; padding:18px; margin-bottom:20px; }
+.stat-card .label { color:#b2b9d9; font-size:0.88em; margin-bottom:8px; }
+.stat-card .value { font-size:1.5em; font-weight:700; color:#edf2ff; }
+.stat-card .sub { margin-top:8px; color:#a9b3d7; font-size:0.88em; }
+.table-container { overflow:hidden; margin-bottom:20px; }
+table { width:100%; border-collapse:collapse; min-width:900px; }
+thead th { padding:14px 12px; text-align:center; color:#9bb4ff; font-size:0.85em; background:rgba(255,255,255,0.04); }
+tbody td { padding:14px 12px; text-align:center; color:#e3e7ff; border-top:1px solid rgba(255,255,255,0.06); font-size:0.95em; }
+tbody tr:hover { background:rgba(255,255,255,0.05); }
+.metal-name { font-weight:600; color:#fff; }
+.metal-symbol { display:block; color:#9bb4ff; font-size:0.82em; margin-top:4px; }
+.price { font-weight:700; color:#fff; }
+.unit { font-size:0.82em; color:#9bb4ff; }
+.change-positive { color:#8efc7f; font-weight:700; }
+.change-negative { color:#ff8d8d; font-weight:700; }
+.change-neutral { color:#c3c8e5; font-weight:700; }
+.tag { display:inline-block; padding:4px 10px; border-radius:999px; font-size:0.78em; }
+.tag-buy { color:#8efc7f; background:rgba(142,252,127,0.14); }
+.tag-warning { color:#ffd469; background:rgba(255,212,105,0.14); }
+.tag-bearish { color:#ff8d8d; background:rgba(255,140,140,0.12); }
+.tag-neutral { color:#abb6ff; background:rgba(171,182,255,0.1); }
+.tech-grid { display:grid; gap:18px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); margin-bottom:20px; }
+.tech-card { padding:18px; border-radius:18px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); }
+.tech-card .card-title { color:#ffd700; margin-bottom:14px; font-weight:700; }
+.tech-row { display:flex; justify-content:space-between; margin-bottom:10px; color:#d8dff3; font-size:0.92em; }
+.tech-row .label { color:#9bb4ff; }
+.summary-box { padding:22px; margin-bottom:20px; line-height:1.8; color:#e8eefd; }
+.summary-box h2 { color:#ffd700; margin-bottom:14px; }
+.summary-box p { color:#d8dff3; }
+.chart-section { padding:20px; margin-bottom:20px; }
+.chart-header { color:#ffd700; font-size:1.05em; font-weight:600; margin-bottom:14px; }
+.chart-wrapper { position:relative; width:100%; height:320px; }
+.ai-panel { padding:18px; margin-top:18px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:18px; }
+.ai-panel h2 { margin-bottom:14px; color:#ffd700; }
+.ai-panel .ai-row { margin-bottom:12px; color:#edf2ff; line-height:1.7; }
+.ai-panel .ai-score { display:inline-block; margin-top:10px; padding:10px 14px; border-radius:14px; background:rgba(255,215,0,0.12); color:#fff; font-weight:700; }
+.disclaimer { text-align:center; padding:18px 16px; font-size:0.82em; color:#a9b3d7; }
+.ai-detail-row { background:rgba(255,215,0,0.04); }
+.ai-detail-cell { padding:20px 24px; }
+.ai-detail-box { background:rgba(255,255,255,0.04); border:1px solid rgba(255,215,0,0.15); border-radius:16px; padding:20px; }
+.ai-detail-box .d-title { color:#ffd700; font-size:1em; font-weight:600; margin-bottom:16px; }
+.ai-detail-grid { display:grid; grid-template-columns:1.2fr 1fr; gap:16px; }
+.ai-detail-col { display:flex; flex-direction:column; gap:10px; }
+.ai-detail-item { display:flex; justify-content:space-between; padding:8px 12px; background:rgba(255,255,255,0.04); border-radius:10px; color:#d8dff3; font-size:0.9em; }
+.ai-detail-item .d-label { color:#9bb4ff; }
+.ai-detail-item .d-value { color:#fff; font-weight:600; }
+.ai-detail-score { display:inline-flex; align-items:center; gap:8px; padding:10px 18px; border-radius:12px; background:rgba(255,215,0,0.12); color:#ffd700; font-weight:700; font-size:1.1em; }
+.ai-detail-text { padding:8px 12px; color:#d8dff3; font-size:0.9em; line-height:1.7; background:rgba(255,255,255,0.02); border-radius:10px; }
+.ai-detail-close { float:right; background:none; border:1px solid rgba(255,255,255,0.15); color:#ccc; padding:4px 14px; border-radius:8px; cursor:pointer; font-size:0.85em; }
+.ai-detail-close:hover { background:rgba(255,255,255,0.08); color:#fff; }
+@media (max-width:980px) { .controls-panel { grid-template-columns:1fr; } table { min-width:100%; } .ai-detail-grid { grid-template-columns:1fr; } }
+@media (max-width:720px) { body { padding:12px; } .header h1 { font-size:1.7em; } .sentiment-banner { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>📈 贵金属与主流投资品种日报</h1>
+<div class="subtitle">实时刷新、品种选择、AI 智能分析</div>
+<div class="meta">当前数据时间：{{ fetch_date }} {{ fetch_time }} | 自动刷新间隔：5 分钟</div>
+</div>
+
+<div class="controls-panel">
+<div class="panel">
+<div class="panel-title">选择跟踪品种</div>
+<div class="notice-box">可从贵金属、能源、基本金属和农产品中选择关注品种。</div>
+<div class="categories-grid">
+{% for category in categories %}
+<div class="category-group">
+<div class="category-title">{{ category }}</div>
+{% for key, info in all_products.items() if info.category == category %}
+<label class="checkbox-label"><input type="checkbox" class="product-checkbox" value="{{ key }}" {% if key in default_selected %}checked{% endif %}> {{ key }}</label>
+{% endfor %}
+</div>
+{% endfor %}
+</div>
+</div>
+<div class="panel">
+<div class="panel-title">操作面板</div>
+<div class="action-group">
+<button id="refreshButton">🔄 刷新行情</button>
+<button id="selectDefaultButton">恢复默认选择</button>
+<button id="clearSelectionButton">清空选择</button>
+</div>
+<div class="status-box" id="refreshStatus">当前状态：已加载初始数据</div>
+<div class="ai-panel" id="aiAnalysisPanel">
+<h2>🤖 AI分析</h2>
+<div class="ai-row" id="aiAnalysisEmpty">请在行情表中点击"AI 分析"按钮，查看单品种深度建议。</div>
+<div class="ai-row ai-score" id="aiScore" style="display:none;"></div>
+<div class="ai-row" id="aiDirection"></div>
+<div class="ai-row" id="aiAdvice"></div>
+<div class="ai-row" id="aiDetail"></div>
+</div>
+</div>
+</div>
+
+<div class="sentiment-banner">
+<div class="sentiment-item"><div class="label">市场情绪</div><div class="value gold" id="marketSentiment">{{ market_trends.overall_sentiment }}</div></div>
+<div class="sentiment-item"><div class="label">上涨品种</div><div class="value green" id="gainCount">{{ market_trends.total_gainers }}</div></div>
+<div class="sentiment-item"><div class="label">下跌品种</div><div class="value red" id="lossCount">{{ market_trends.total_losers }}</div></div>
+<div class="sentiment-item"><div class="label">平均涨跌幅</div><div class="value gold" id="avgChangePct">{{ market_trends.avg_change_pct }}%</div></div>
+</div>
+
+<div class="stats-grid">
+<div class="stat-card"><div class="label">最强品种</div><div class="value" id="strongestName">{{ market_trends.strongest.name if market_trends.strongest else '—' }}</div><div class="sub" id="strongestSub">涨幅: {{ market_trends.strongest.change_pct if market_trends.strongest else '--' }}%</div></div>
+<div class="stat-card"><div class="label">最弱品种</div><div class="value" id="weakestName">{{ market_trends.weakest.name if market_trends.weakest else '—' }}</div><div class="sub" id="weakestSub">涨幅: {{ market_trends.weakest.change_pct if market_trends.weakest else '--' }}%</div></div>
+<div class="stat-card"><div class="label">涨跌品种比</div><div class="value" id="gainLossCount">{{ market_trends.total_gainers }}/{{ market_trends.total_losers }}</div><div class="sub">反映市场广度和情绪</div></div>
+</div>
+
+<div class="table-container">
+<table>
+<thead><tr><th>品种</th><th>最新价</th><th>开盘</th><th>最高</th><th>最低</th><th>涨跌</th><th>涨跌%</th><th>环比(月)</th><th>同比(年)</th><th>技术信号</th><th>操作</th></tr></thead>
+<tbody id="priceTableBody">
+{% for metal in metals %}
+<tr>
+<td><div class="metal-name">{% if metal.category == '能源' %}🛢️{% elif metal.category == '贵金属' %}💎{% elif metal.category == '基本金属' %}🔩{% else %}🌾{% endif %} {{ metal.full_name }}</div><span class="metal-symbol">{{ metal.symbol }}</span></td>
+<td><div class="price">{{ metal.price }}</div><span class="unit">{{ metal.unit }}</span></td>
+<td>{{ metal.open }}</td><td>{{ metal.high }}</td><td>{{ metal.low }}</td>
+<td class="{% if metal.change > 0 %}change-positive{% elif metal.change < 0 %}change-negative{% else %}change-neutral{% endif %}">{{ metal.change }}</td>
+<td class="{% if metal.change_pct > 0 %}change-positive{% elif metal.change_pct < 0 %}change-negative{% else %}change-neutral{% endif %}">{{ metal.change_pct }}%</td>
+<td class="{% if metal.mom_pct > 0 %}change-positive{% elif metal.mom_pct < 0 %}change-negative{% else %}change-neutral{% endif %}">{{ metal.mom_pct if metal.mom_pct is not none else '--' }}%</td>
+<td class="{% if metal.yoy_pct > 0 %}change-positive{% elif metal.yoy_pct < 0 %}change-negative{% else %}change-neutral{% endif %}">{{ metal.yoy_pct if metal.yoy_pct is not none else '--' }}%</td>
+<td><span class="tag {% if '超卖' in metal.signal or '偏强' in metal.signal or '买入' in metal.signal %}tag-buy{% elif '超买' in metal.signal %}tag-warning{% elif '偏弱' in metal.signal %}tag-bearish{% else %}tag-neutral{% endif %}">{{ metal.signal }}</span></td>
+<td><button class="ai-button" data-product="{{ metal.name }}">AI 分析</button></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+
+<div class="tech-grid" id="technicalAnalysisGrid"></div>
+
+<div class="summary-box">
+<h2>📝 市场总结与投资建议</h2>
+<p id="summaryText">{{ summary }}</p>
+</div>
+
+<div class="chart-section">
+<div class="chart-header">📈 近1月价格走势图</div>
+<div class="chart-wrapper">
+<canvas id="monthlyChart"></canvas>
+</div>
+</div>
+
+<div class="disclaimer">⚠️ 本报告仅供参考，不构成投资建议。投资有风险，入市需谨慎。 | 数据更新时间：{{ fetch_time }}</div>
+</div>
+
+<script id="data-store" type="application/json">
+{{ {"defaultSelected": default_selected, "metals": metals, "marketTrends": market_trends, "summary": summary, "fetchTime": fetch_time, "fetchDate": fetch_date} | tojson | safe }}
+</script>
+<script>
+(function() {
+  var store = JSON.parse(document.getElementById('data-store').textContent);
+  var defaultSelected = store.defaultSelected;
+
+  function getSelected() {
+    var cbs = document.querySelectorAll('.product-checkbox:checked');
+    var sel = Array.from(cbs).map(function(el) { return el.value; });
+    return sel.length ? sel : defaultSelected;
+  }
+
+  function setStatus(msg) {
+    document.getElementById('refreshStatus').textContent = msg;
+  }
+
+  function renderTable(metals) {
+    var tbody = document.getElementById('priceTableBody');
+    var html = '';
+    for (var i = 0; i < metals.length; i++) {
+      var m = metals[i];
+      var icon = m.category === '能源' ? '🛢️' : m.category === '贵金属' ? '💎' : m.category === '基本金属' ? '🔩' : '🌾';
+      var cls = m.change_pct > 0 ? 'change-positive' : m.change_pct < 0 ? 'change-negative' : 'change-neutral';
+      var clsM = m.mom_pct > 0 ? 'change-positive' : m.mom_pct < 0 ? 'change-negative' : 'change-neutral';
+      var clsY = m.yoy_pct > 0 ? 'change-positive' : m.yoy_pct < 0 ? 'change-negative' : 'change-neutral';
+      var sig = m.signal || '--';
+      var tagCls = 'tag-neutral';
+      if (sig.indexOf('超卖') >= 0 || sig.indexOf('偏强') >= 0 || sig.indexOf('买入') >= 0) tagCls = 'tag-buy';
+      else if (sig.indexOf('超买') >= 0) tagCls = 'tag-warning';
+      else if (sig.indexOf('偏弱') >= 0) tagCls = 'tag-bearish';
+      html += '<tr>';
+      html += '<td><div class="metal-name">' + icon + ' ' + m.full_name + '</div><span class="metal-symbol">' + m.symbol + '</span></td>';
+      html += '<td><div class="price">' + m.price + '</div><span class="unit">' + m.unit + '</span></td>';
+      html += '<td>' + (m.open || '--') + '</td><td>' + (m.high || '--') + '</td><td>' + (m.low || '--') + '</td>';
+      html += '<td class="' + cls + '">' + (m.change || '--') + '</td>';
+      html += '<td class="' + cls + '">' + (m.change_pct != null ? m.change_pct + '%' : '--') + '</td>';
+      html += '<td class="' + clsM + '">' + (m.mom_pct != null ? m.mom_pct + '%' : '--') + '</td>';
+      html += '<td class="' + clsY + '">' + (m.yoy_pct != null ? m.yoy_pct + '%' : '--') + '</td>';
+      html += '<td><span class="tag ' + tagCls + '">' + sig + '</span></td>';
+      html += '<td><button class="ai-button" data-product="' + m.name + '">AI 分析</button></td>';
+      html += '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
+  function renderTechGrid(metals) {
+    var grid = document.getElementById('technicalAnalysisGrid');
+    var html = '';
+    for (var i = 0; i < metals.length; i++) {
+      var m = metals[i];
+      var icon = m.category === '能源' ? '🛢️' : m.category === '贵金属' ? '💎' : m.category === '基本金属' ? '🔩' : '🌾';
+      html += '<div class="tech-card">';
+      html += '<div class="card-title">' + icon + ' ' + m.full_name + ' - 技术分析</div>';
+      html += '<div class="tech-row"><span class="label">趋势</span><span>' + (m.trend || '--') + '</span></div>';
+      html += '<div class="tech-row"><span class="label">RSI</span><span>' + (m.rsi != null ? m.rsi : '--') + '</span></div>';
+      html += '<div class="tech-row"><span class="label">MA5</span><span>' + (m.sma_5 != null ? m.sma_5 : '--') + '</span></div>';
+      html += '<div class="tech-row"><span class="label">MA20</span><span>' + (m.sma_20 != null ? m.sma_20 : '--') + '</span></div>';
+      html += '<div class="tech-row"><span class="label">阻力</span><span>' + (m.resistance_level != null ? m.resistance_level : '--') + '</span></div>';
+      html += '<div class="tech-row"><span class="label">支撑</span><span>' + (m.support_level != null ? m.support_level : '--') + '</span></div>';
+      html += '<div class="tech-row"><span class="label">波动率</span><span>' + (m.volatility != null ? m.volatility : '--') + '</span></div>';
+      html += '<div class="tech-row"><span class="label">环比</span><span>' + (m.mom_direction || '--') + '</span></div>';
+      html += '<div class="tech-row"><span class="label">同比</span><span>' + (m.yoy_direction || '--') + '</span></div>';
+      html += '</div>';
+    }
+    grid.innerHTML = html;
+  }
+
+  function updateBanner(market) {
+    document.getElementById('marketSentiment').textContent = market.overall_sentiment || '--';
+    document.getElementById('gainCount').textContent = market.total_gainers != null ? market.total_gainers : 0;
+    document.getElementById('lossCount').textContent = market.total_losers != null ? market.total_losers : 0;
+    document.getElementById('avgChangePct').textContent = (market.avg_change_pct != null ? market.avg_change_pct : 0) + '%';
+    if (market.strongest) {
+      document.getElementById('strongestName').textContent = market.strongest.name;
+      document.getElementById('strongestSub').textContent = '涨幅: ' + market.strongest.change_pct + '%';
+    }
+    if (market.weakest) {
+      document.getElementById('weakestName').textContent = market.weakest.name;
+      document.getElementById('weakestSub').textContent = '涨幅: ' + market.weakest.change_pct + '%';
+    }
+    document.getElementById('gainLossCount').textContent = (market.total_gainers || 0) + '/' + (market.total_losers || 0);
+  }
+
+  function updateSummary(text) {
+    document.getElementById('summaryText').textContent = text || '当前暂无摘要信息。';
+  }
+
+  function updateMeta(d, t) {
+    document.querySelector('.header .meta').textContent = '当前数据时间：' + (d || '--') + ' ' + (t || '--') + ' | 自动刷新间隔：5 分钟';
+  }
+
+  var chartInstance = null;
+
+  function renderChart(data) {
+    var canvas = document.getElementById('monthlyChart');
+    if (!canvas) return;
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    var entries = Object.entries(data);
+    if (entries.length === 0) return;
+    var datasets = [];
+    var colors = ['#FFD700', '#C0C0C0', '#E5E4E2', '#AAA', '#4ECDC4', '#FF6B6B', '#45B7D1'];
+    var allDates = [];
+    for (var i = 0; i < entries.length; i++) {
+      var key = entries[i][0];
+      var hd = entries[i][1];
+      var color = colors[i % colors.length];
+      datasets.push({ label: hd.name || key, data: hd.closes, borderColor: color, borderWidth: 2, pointRadius: 2, tension: 0.3, fill: false });
+      if (hd.dates.length > allDates.length) allDates = hd.dates;
+    }
+    chartInstance = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: allDates, datasets: datasets },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#eef2ff' } } }, scales: { x: { ticks: { color: '#9bb4ff' } }, y: { ticks: { color: '#9bb4ff' } } } }
+    });
+  }
+
+  function loadData() {
+    var selected = getSelected();
+    var params = new URLSearchParams();
+    for (var i = 0; i < selected.length; i++) params.append('selected', selected[i]);
+    setStatus('正在加载最新行情...');
+    fetch('/api/data?' + params.toString()).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.metals) {
+        renderTable(data.metals);
+        renderTechGrid(data.metals);
+      }
+      attachAIButtons();
+      updateBanner(data.market_trends || {});
+      updateSummary(data.summary);
+      updateMeta(data.fetch_date, data.fetch_time);
+      setStatus('行情已刷新：' + (data.fetch_time || new Date().toLocaleTimeString()));
+    }).catch(function(err) { setStatus('请求失败：' + err.message); });
+  }
+
+  function loadChart() {
+    var selected = getSelected();
+    var params = new URLSearchParams();
+    for (var i = 0; i < selected.length; i++) params.append('selected', selected[i]);
+    fetch('/api/history?' + params.toString()).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.history) renderChart(data.history);
+    }).catch(function() {});
+  }
+
+  function refreshData() {
+    setStatus('正在刷新数据，请稍候...');
+    fetch('/api/refresh').then(function(r) { return r.json(); }).then(function() {
+      loadData();
+      setTimeout(loadChart, 500);
+    }).catch(function(err) { setStatus('刷新失败：' + err.message); });
+  }
+
+  function showAIDetailRow(button, data) {
+    // Remove any existing detail rows
+    var existing = document.querySelectorAll('.ai-detail-row');
+    for (var i = 0; i < existing.length; i++) existing[i].remove();
+
+    var tr = button.closest('tr');
+    var detailRow = document.createElement('tr');
+    detailRow.className = 'ai-detail-row';
+    var cell = document.createElement('td');
+    cell.className = 'ai-detail-cell';
+    cell.setAttribute('colspan', '11');
+
+    var pred = data.prediction || {};
+    var advice = data.advice || {};
+    var momentum = data.momentum || {};
+
+    var scoreColor = data.score >= 70 ? '#8efc7f' : data.score >= 40 ? '#ffd700' : '#ff8d8d';
+    var scoreLabel = data.score >= 70 ? '偏多' : data.score >= 40 ? '中性' : '偏空';
+
+    cell.innerHTML =
+      '<div class="ai-detail-box">' +
+        '<button class="ai-detail-close" onclick="this.closest(\'.ai-detail-row\').remove()">✕ 关闭</button>' +
+        '<div class="d-title">🤖 ' + data.product_name + ' — AI 深度分析</div>' +
+        '<div style="margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">' +
+          '<span class="ai-detail-score" style="color:' + scoreColor + '">综合评分 ' + (data.score || '--') + ' / 100 (' + scoreLabel + ')</span>' +
+          '<span class="ai-detail-score" style="background:rgba(255,255,255,0.06);color:#eef2ff;font-size:0.9em;">当前价: ' + (data.current_price || '--') + '</span>' +
+          '<span class="ai-detail-score" style="background:rgba(255,255,255,0.06);color:#eef2ff;font-size:0.9em;">预测: ' + (pred.direction || '--') + '</span>' +
+        '</div>' +
+        '<div class="ai-detail-grid">' +
+          '<div class="ai-detail-col">' +
+            '<div class="ai-detail-item"><span class="d-label">📊 趋势分析</span><span class="d-value">' + (data.trend_analysis || '--') + '</span></div>' +
+            '<div class="ai-detail-item"><span class="d-label">📈 RSI 分析</span><span class="d-value">' + (data.rsi_analysis || '--') + '</span></div>' +
+            '<div class="ai-detail-item"><span class="d-label">📉 价格区间</span><span class="d-value">' + (data.range_analysis || '--') + '</span></div>' +
+          '</div>' +
+          '<div class="ai-detail-col">' +
+            '<div class="ai-detail-item"><span class="d-label">⚡ 动量</span><span class="d-value">' + (momentum.summary || '--') + '</span></div>' +
+            '<div class="ai-detail-item"><span class="d-label">🎯 预测详情</span><span class="d-value">' + (pred.detail || '--') + '</span></div>' +
+            '<div class="ai-detail-item"><span class="d-label">💡 建议操作</span><span class="d-value">' + (advice.action || '--') + '</span></div>' +
+            '<div class="ai-detail-item"><span class="d-label">📝 建议理由</span><span class="d-value">' + (advice.reason || '') + '</span></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    detailRow.appendChild(cell);
+    tr.parentNode.insertBefore(detailRow, tr.nextSibling);
+    setStatus('已加载 ' + data.product_name + ' 的 AI 分析。');
+  }
+
+  function attachAIButtons() {
+    var buttons = document.querySelectorAll('.ai-button');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].onclick = function() {
+        var name = this.getAttribute('data-product');
+        if (!name) return;
+        setStatus('正在分析 ' + name + '...');
+        var btn = this;
+        fetch('/api/analyze/' + encodeURIComponent(name)).then(function(r) { return r.json(); }).then(function(data) {
+          showAIDetailRow(btn, data);
+          // Also update side panel
+          document.getElementById('aiAnalysisEmpty').style.display = 'none';
+          document.getElementById('aiScore').style.display = 'block';
+          document.getElementById('aiScore').textContent = 'AI 评分：' + (data.score || '--');
+          document.getElementById('aiDirection').textContent = '预测方向：' + (data.prediction ? data.prediction.direction || '--' : '--');
+          document.getElementById('aiAdvice').textContent = '投资建议：' + (data.advice ? data.advice.action || '--' : '--');
+          document.getElementById('aiDetail').textContent = data.prediction ? data.prediction.detail || '--' : '--';
+          setStatus('已更新 ' + name + ' 的AI分析结果。');
+        }).catch(function(err) { setStatus('AI分析请求失败：' + err.message); });
+      };
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var checkboxes = document.querySelectorAll('.product-checkbox');
+    for (var i = 0; i < checkboxes.length; i++) {
+      checkboxes[i].addEventListener('change', function() { loadData(); setTimeout(loadChart, 500); });
+    }
+    document.getElementById('refreshButton').addEventListener('click', refreshData);
+    document.getElementById('selectDefaultButton').addEventListener('click', function() {
+      var cbs = document.querySelectorAll('.product-checkbox');
+      for (var i = 0; i < cbs.length; i++) cbs[i].checked = defaultSelected.indexOf(cbs[i].value) >= 0;
+      loadData();
+      setTimeout(loadChart, 500);
+    });
+    document.getElementById('clearSelectionButton').addEventListener('click', function() {
+      var cbs = document.querySelectorAll('.product-checkbox');
+      for (var i = 0; i < cbs.length; i++) cbs[i].checked = false;
+      loadData();
+      setTimeout(loadChart, 500);
+    });
+    attachAIButtons();
+    setTimeout(loadData, 300);
+    setTimeout(loadChart, 1000);
+    setInterval(function() { loadData(); setTimeout(loadChart, 500); }, 300000);
+  });
+})();
+</script>
+</body>
+</html>
