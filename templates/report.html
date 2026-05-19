@@ -93,7 +93,7 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
 <div class="header">
 <h1>📈 贵金属与主流投资品种日报</h1>
 <div class="subtitle">实时刷新、品种选择、AI 智能分析</div>
-<div class="meta">当前数据时间：{{ fetch_date }} {{ fetch_time }} | 自动刷新间隔：5 分钟</div>
+<div class="meta">当前数据时间：{{ fetch_date }} {{ fetch_time }} | 自动刷新间隔：5 分钟 | <span id="dataSourceBadge" style="color:#8efc7f;">数据源: 模拟行情</span></div>
 </div>
 
 <div class="controls-panel">
@@ -277,8 +277,10 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
     document.getElementById('summaryText').textContent = text || '当前暂无摘要信息。';
   }
 
-  function updateMeta(d, t) {
-    document.querySelector('.header .meta').textContent = '当前数据时间：' + (d || '--') + ' ' + (t || '--') + ' | 自动刷新间隔：5 分钟';
+  function updateMeta(d, t, source) {
+    var meta = document.querySelector('.header .meta');
+    var sourceText = source || '模拟行情';
+    meta.innerHTML = '当前数据时间：' + (d || '--') + ' ' + (t || '--') + ' | 自动刷新间隔：5 分钟 | <span id="dataSourceBadge" style="color:' + (sourceText.indexOf('实时') >= 0 ? '#8efc7f' : '#ffd700') + ';">数据源: ' + sourceText + '</span>';
   }
 
   var chartInstance = null;

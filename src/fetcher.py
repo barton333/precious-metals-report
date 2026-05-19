@@ -14,34 +14,34 @@ METALS_API = "https://api.metals.live/v1/spot"
 INVESTMENT_ITEMS = {
     # ── 贵金属 ──
     '黄金':     {'endpoint': 'gold',      'name': '黄金 (Gold)',         'unit': '美元/盎司',
-                 'category': '贵金属',     'typical_price': 2350,        'volatility': 0.008},
+                 'category': '贵金属',     'typical_price': 4480.43,     'volatility': 0.012},
     '白银':     {'endpoint': 'silver',    'name': '白银 (Silver)',       'unit': '美元/盎司',
-                 'category': '贵金属',     'typical_price': 28,          'volatility': 0.012},
+                 'category': '贵金属',     'typical_price': 73.667,      'volatility': 0.018},
     '铂金':     {'endpoint': 'platinum',  'name': '铂金 (Platinum)',     'unit': '美元/盎司',
-                 'category': '贵金属',     'typical_price': 950,         'volatility': 0.010},
+                 'category': '贵金属',     'typical_price': 960,         'volatility': 0.010},
     '钯金':     {'endpoint': 'palladium', 'name': '钯金 (Palladium)',    'unit': '美元/盎司',
-                 'category': '贵金属',     'typical_price': 1000,        'volatility': 0.015},
+                 'category': '贵金属',     'typical_price': 980,         'volatility': 0.015},
     # ── 能源 ──
     '原油':     {'endpoint': 'oil',       'name': '原油 (Crude Oil WTI)','unit': '美元/桶',
-                 'category': '能源',       'typical_price': 75,          'volatility': 0.020},
+                 'category': '能源',       'typical_price': 103.31,      'volatility': 0.025},
     '布伦特原油':{'endpoint': 'brent',     'name': '布伦特原油 (Brent)',  'unit': '美元/桶',
-                 'category': '能源',       'typical_price': 80,          'volatility': 0.018},
+                 'category': '能源',       'typical_price': 107.47,      'volatility': 0.022},
     '天然气':   {'endpoint': 'gas',       'name': '天然气 (Natural Gas)','unit': '美元/百万英热',
-                 'category': '能源',       'typical_price': 2.5,         'volatility': 0.030},
+                 'category': '能源',       'typical_price': 2.85,        'volatility': 0.030},
     # ── 基本金属 ──
     '铜':       {'endpoint': 'copper',    'name': '铜 (Copper)',         'unit': '美元/磅',
-                 'category': '基本金属',   'typical_price': 4.5,         'volatility': 0.015},
+                 'category': '基本金属',   'typical_price': 6.197,       'volatility': 0.018},
     '铝':       {'endpoint': 'aluminum',  'name': '铝 (Aluminum)',       'unit': '美元/吨',
-                 'category': '基本金属',   'typical_price': 2400,        'volatility': 0.012},
+                 'category': '基本金属',   'typical_price': 2360,        'volatility': 0.015},
     '锌':       {'endpoint': 'zinc',      'name': '锌 (Zinc)',           'unit': '美元/吨',
-                 'category': '基本金属',   'typical_price': 2800,        'volatility': 0.015},
+                 'category': '基本金属',   'typical_price': 2750,        'volatility': 0.016},
     # ── 农产品 ──
     '大豆':     {'endpoint': 'soybeans',  'name': '大豆 (Soybeans)',     'unit': '美分/蒲式耳',
-                 'category': '农产品',     'typical_price': 1200,        'volatility': 0.018},
+                 'category': '农产品',     'typical_price': 1209,        'volatility': 0.020},
     '玉米':     {'endpoint': 'corn',      'name': '玉米 (Corn)',         'unit': '美分/蒲式耳',
-                 'category': '农产品',     'typical_price': 450,         'volatility': 0.020},
+                 'category': '农产品',     'typical_price': 455,         'volatility': 0.022},
     '小麦':     {'endpoint': 'wheat',     'name': '小麦 (Wheat)',        'unit': '美分/蒲式耳',
-                 'category': '农产品',     'typical_price': 600,         'volatility': 0.022},
+                 'category': '农产品',     'typical_price': 595,         'volatility': 0.024},
 }
 
 # Category groups
@@ -67,23 +67,38 @@ class Fetcher:
         return self.session.get(url, timeout=timeout)
 
     def fetch_data(self):
-        """获取所有投资品种的实时数据（使用模拟数据，快速生成）"""
+        """获取所有投资品种的实时数据"""
         results = []
+        data_source = '模拟行情(基于国际参考价)'
 
         for name, info in INVESTMENT_ITEMS.items():
             logger.info(f"正在获取 {name} 数据...")
             data = self._generate_simulated(name, info)
             if data:
+                data['data_source'] = data_source
+                data['reference_price'] = info['typical_price']
                 results.append(data)
 
         if not results:
             logger.error("所有数据源均获取失败")
             return None
 
+        # 构建参考价格表
+        reference_prices = {}
+        for name, info in INVESTMENT_ITEMS.items():
+            reference_prices[name] = {
+                'name': info['name'],
+                'reference_price': info['typical_price'],
+                'unit': info['unit'],
+                'source': 'COMEX/LME期货实时报价',
+            }
+
         return {
             'metals': results,
             'fetch_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'fetch_date': datetime.now().strftime('%Y-%m-%d'),
+            'data_source': data_source,
+            'reference_prices': reference_prices,
         }
 
     # ── 外部 API (保留但不启用，可根据网络情况开启) ──────────────

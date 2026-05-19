@@ -123,6 +123,8 @@ def api_data():
         'summary': data.get('summary', ''),
         'fetch_time': data.get('fetch_time', ''),
         'fetch_date': data.get('fetch_date', ''),
+        'data_source': data.get('data_source', '参考数据'),
+        'reference_prices': data.get('reference_prices', {}),
     })
 
 
@@ -225,6 +227,41 @@ def api_analyze(product_name):
     result = analyze_product(target)
     _ai_cache[product_name] = result
     return jsonify(result)
+
+
+@app.route('/api/verify')
+def api_verify():
+    """API: 价格验证 — 返回当前价与国际参考价的对比"""
+    data = get_all_data()
+    if not data:
+        return jsonify({'error': '无数据'}), 500
+
+    metals = data.get('metals', [])
+    refs = data.get('reference_prices', {})
+
+    verification = []
+    for m in metals:
+        name = m['name']
+        ref = refs.get(name, {})
+        ref_price = ref.get('reference_price', 0)
+        current = m['price']
+        deviation = round(((current - ref_price) / ref_price) * 100, 2) if ref_price else 0
+        verification.append({
+            'name': name,
+            'full_name': m['full_name'],
+            'current_price': current,
+            'reference_price': ref_price,
+            'unit': m['unit'],
+            'deviation_pct': deviation,
+            'source': ref.get('source', '模拟数据'),
+            'status': '正常' if abs(deviation) < 5 else '偏差较大',
+        })
+
+    return jsonify({
+        'data_source': data.get('data_source', '未知'),
+        'fetch_time': data.get('fetch_time', ''),
+        'verification': verification,
+    })
 
 
 @app.route('/api/refresh')

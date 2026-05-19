@@ -57,6 +57,8 @@ class Analyzer:
             'market_trends': market_trends,
             'fetch_time': data.get('fetch_time', ''),
             'fetch_date': data.get('fetch_date', ''),
+            'data_source': data.get('data_source', '参考数据'),
+            'reference_prices': data.get('reference_prices', {}),
             'summary': self.generate_summary(analyzed_metals, market_trends),
         }
         return result
