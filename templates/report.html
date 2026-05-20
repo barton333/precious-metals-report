@@ -72,7 +72,9 @@ tbody tr:hover { background:rgba(255,255,255,0.05); }
 .ai-panel .ai-score { display:inline-block; margin-top:10px; padding:10px 14px; border-radius:14px; background:rgba(255,215,0,0.12); color:#fff; font-weight:700; }
 button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-action:manipulation; }
 .disclaimer { text-align:center; padding:18px 16px; font-size:0.82em; color:#a9b3d7; }
-button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-action:manipulation; }
+
+
+
 .period-btn { padding:4px 14px; border-radius:8px; cursor:pointer; font-size:0.78em; transition:all 0.2s; }
 .period-btn.active { background:rgba(255,215,0,0.2); border:1px solid rgba(255,215,0,0.3); color:#ffd700; }
 .period-btn.inactive { background:transparent; border:1px solid rgba(255,255,255,0.15); color:#ccc; }
@@ -182,6 +184,25 @@ button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-acti
   .checkbox-label { padding:4px 0; }
   .checkbox-label input { width:18px; height:18px; }
 }
+
+/* ===== 折叠面板 ===== */
+.collapsible-header {
+  display:flex; justify-content:space-between; align-items:center;
+  cursor:pointer; user-select:none; padding:4px 0;
+}
+.collapsible-header:hover { opacity:0.8; }
+.collapsible-header .collapse-icon {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:28px; border-radius:50%;
+  background:rgba(255,255,255,0.06); color:#9bb4ff;
+  font-size:0.85em; transition:transform 0.3s ease;
+}
+.collapsible-header.collapsed .collapse-icon { transform:rotate(-90deg); }
+.collapsible-body { overflow:hidden; transition:max-height 0.3s ease; max-height:2000px; }
+.collapsible-body.collapsed { max-height:0 !important; padding-top:0 !important; padding-bottom:0 !important; margin-bottom:0 !important; overflow:hidden; }
+.collapsible-body.collapsed > * { display:none !important; }
+.panel-with-collapse { margin-bottom:20px; }
+
 </style>
 </head>
 <body>
@@ -216,7 +237,11 @@ button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-acti
 </div>
 <div class="status-box" id="refreshStatus">当前状态：已加载初始数据</div>
 <div class="ai-panel" id="aiAnalysisPanel">
-<h2>🤖 AI分析</h2>
+<div class="collapsible-header" style="padding:0;margin-bottom:8px;">
+<h2 style="margin-bottom:0;">🤖 AI分析</h2>
+<span class="collapse-icon">▼</span>
+</div>
+<div class="collapsible-body" style="padding-top:6px;">
 <div class="ai-row" id="aiAnalysisEmpty">请在行情表中点击"AI 分析"按钮，查看单品种深度建议。</div>
 <div class="ai-row ai-score" id="aiScore" style="display:none;"></div>
 <div class="ai-row" id="aiDirection"></div>
@@ -225,18 +250,26 @@ button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-acti
 </div>
 </div>
 </div>
+</div>
 
-<div class="sentiment-banner">
+<div class="chart-section panel-with-collapse">
+<div class="chart-header collapsible-header">
+<span>📊 市场情绪概览</span>
+<span class="collapse-icon">▼</span>
+</div>
+<div class="collapsible-body" style="padding-top:14px;">
+<div class="sentiment-banner" style="margin-bottom:0;">
 <div class="sentiment-item"><div class="label">市场情绪</div><div class="value gold" id="marketSentiment">{{ market_trends.overall_sentiment }}</div></div>
 <div class="sentiment-item"><div class="label">上涨品种</div><div class="value green" id="gainCount">{{ market_trends.total_gainers }}</div></div>
 <div class="sentiment-item"><div class="label">下跌品种</div><div class="value red" id="lossCount">{{ market_trends.total_losers }}</div></div>
 <div class="sentiment-item"><div class="label">平均涨跌幅</div><div class="value gold" id="avgChangePct">{{ market_trends.avg_change_pct }}%</div></div>
 </div>
-
-<div class="stats-grid">
+<div class="stats-grid" style="margin-bottom:0;">
 <div class="stat-card"><div class="label">最强品种</div><div class="value" id="strongestName">{{ market_trends.strongest.name if market_trends.strongest else '—' }}</div><div class="sub" id="strongestSub">涨幅: {{ market_trends.strongest.change_pct if market_trends.strongest else '--' }}%</div></div>
 <div class="stat-card"><div class="label">最弱品种</div><div class="value" id="weakestName">{{ market_trends.weakest.name if market_trends.weakest else '—' }}</div><div class="sub" id="weakestSub">涨幅: {{ market_trends.weakest.change_pct if market_trends.weakest else '--' }}%</div></div>
 <div class="stat-card"><div class="label">涨跌品种比</div><div class="value" id="gainLossCount">{{ market_trends.total_gainers }}/{{ market_trends.total_losers }}</div><div class="sub">反映市场广度和情绪</div></div>
+</div>
+</div>
 </div>
 
 <div class="table-container">
@@ -260,35 +293,52 @@ button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-acti
 </table>
 </div>
 
+<div class="chart-section panel-with-collapse">
+<div class="chart-header collapsible-header">
+<span>📊 技术分析</span>
+<span class="collapse-icon">▼</span>
+</div>
+<div class="collapsible-body" style="padding-top:14px;">
 <div class="tech-grid" id="technicalAnalysisGrid"></div>
+</div>
+</div>
 
-<div class="summary-box">
-<h2>📝 市场总结与投资建议</h2>
+<div class="summary-box panel-with-collapse">
+<div class="collapsible-header" style="padding:0;margin-bottom:0;">
+<h2 style="margin-bottom:0;">📝 市场总结与投资建议</h2>
+<span class="collapse-icon">▼</span>
+</div>
+<div class="collapsible-body" style="padding-top:14px;">
 <p id="summaryText">{{ summary }}</p>
+</div>
 </div>
 
 <!-- Multi-Source Verification -->
-<div class="chart-section" id="verifyPanel">
-    <div class="chart-header" style="display:flex;justify-content:space-between;align-items:center;">
+<div class="chart-section panel-with-collapse" id="verifyPanel">
+    <div class="chart-header collapsible-header">
         <span>🔍 多数据源交叉核对</span>
-        <span style="font-size:0.78em;color:#9bb4ff;">路透社 · 彭博 · 新浪财经</span>
+        <span style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:0.78em;color:#9bb4ff;">路透社 · 彭博 · 新浪财经</span>
+            <span class="collapse-icon">▼</span>
+        </span>
     </div>
-    <div id="verifyContent" style="color:#d8dff3;font-size:0.85em;line-height:1.6;padding:8px 4px;">加载中...</div>
+    <div class="collapsible-body" id="verifyContent" style="color:#d8dff3;font-size:0.85em;line-height:1.6;padding:8px 4px;">加载中...</div>
 </div>
 
-<div class="chart-section">
-<div class="chart-header" style="display:flex;justify-content:space-between;align-items:center;">
+<div class="chart-section panel-with-collapse">
+<div class="chart-header collapsible-header">
   <span>📈 价格走势图</span>
   <span style="display:flex;gap:6px;align-items:center;">
-    <span style="font-size:0.78em;color:#9bb4ff;margin-right:4px;">多源交叉核对</span>
-    <span style="font-size:0.78em;color:#9bb4ff;margin-right:8px;">多源交叉核对</span>
-    <button class="period-btn active" data-period="day" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,215,0,0.3);background:rgba(255,215,0,0.2);color:#ffd700;cursor:pointer;font-size:0.78em;">日线</button>
-    <button class="period-btn" data-period="week" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#ccc;cursor:pointer;font-size:0.78em;">周线</button>
-    <button class="period-btn" data-period="month" style="padding:4px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:transparent;color:#ccc;cursor:pointer;font-size:0.78em;">月线</button>
+    <button class="period-btn active" data-period="day">日线</button>
+    <button class="period-btn" data-period="week">周线</button>
+    <button class="period-btn" data-period="month">月线</button>
+    <span class="collapse-icon">▼</span>
   </span>
 </div>
+<div class="collapsible-body">
 <div class="chart-wrapper">
 <canvas id="monthlyChart"></canvas>
+</div>
 </div>
 </div>
 
@@ -423,13 +473,11 @@ button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-acti
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
       if (b.getAttribute('data-period') === period) {
-        b.style.background = 'rgba(255,215,0,0.2)';
-        b.style.borderColor = 'rgba(255,215,0,0.3)';
-        b.style.color = '#ffd700';
+        b.classList.add('active');
+        b.classList.remove('inactive');
       } else {
-        b.style.background = 'transparent';
-        b.style.borderColor = 'rgba(255,255,255,0.15)';
-        b.style.color = '#ccc';
+        b.classList.remove('active');
+        b.classList.add('inactive');
       }
     }
     loadChart();
@@ -451,10 +499,10 @@ button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-acti
       datasets.push({ label: hd.name || key, data: hd.closes, borderColor: color, borderWidth: 2, pointRadius: 2, tension: 0.3, fill: false });
       if (hd.dates.length > allDates.length) allDates = hd.dates;
     }
+    var isMobile = window.innerWidth < 720;
     chartInstance = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: { labels: allDates, datasets: datasets },
-      var isMobile = window.innerWidth < 720;
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -663,6 +711,25 @@ button, .checkbox-label, .product-checkbox, .period-btn, .ai-button { touch-acti
         if (chartInstance) chartInstance.resize();
       }, 300);
     });
+    // === 折叠面板功能 ===
+    function initCollapsible() {
+      var headers = document.querySelectorAll('.collapsible-header');
+      for (var i = 0; i < headers.length; i++) {
+        headers[i].onclick = function() {
+          var body = this.nextElementSibling;
+          if (!body) return;
+          var isCollapsed = body.classList.contains('collapsed');
+          if (isCollapsed) {
+            body.classList.remove('collapsed');
+            this.classList.remove('collapsed');
+          } else {
+            body.classList.add('collapsed');
+            this.classList.add('collapsed');
+          }
+        };
+      }
+    }
+    initCollapsible();
   });
 })();
 </script>
