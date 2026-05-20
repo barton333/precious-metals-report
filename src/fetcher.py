@@ -7,6 +7,13 @@ import re
 import hashlib
 from datetime import datetime, timedelta
 
+# Optional yfinance
+try:
+    import yfinance as yf
+    _HAS_YFINANCE = True
+except ImportError:
+    _HAS_YFINANCE = False
+
 logger = logging.getLogger(__name__)
 
 # Free precious metals API (no API key required)
@@ -110,16 +117,42 @@ class Fetcher:
     def _get(self, url, timeout=5):
         return self.session.get(url, timeout=timeout)
 
+    def _seed_for_date(self, date_str=None):
+        """返回一个按日期确定性的 RandomState"""
+        if date_str is None:
+            date_str = datetime.now().strftime('%Y-%m-%d')
+        seed = int(hashlib.md5(date_str.encode()).hexdigest()[:8], 16) % 100000
+        return np.random.RandomState(seed)
+
     def fetch_data(self):
-        """获取所有投资品种的实时数据"""
+        """获取所有投资品种的实时数据（按配置尝试真实源 → 确定性模拟）"""
         results = []
-        data_source = '模拟行情(基于国际参考价)'
+        data_source_mode = self.config.get('data_source', 'simulated')
+        date_str = datetime.now().strftime('%Y-%m-%d')
+
+        # 用日期 seed 确保同日运行结果一致
+        global_rng = self._seed_for_date(date_str)
 
         for name, info in INVESTMENT_ITEMS.items():
             logger.info(f"正在获取 {name} 数据...")
-            data = self._generate_simulated(name, info)
+            data = None
+
+            # 按配置尝试真实数据源
+            if data_source_mode == 'yfinance' and _HAS_YFINANCE:
+                data = self._try_yfinance(name, info)
+            if data is None and data_source_mode in ('yfinance', 'api'):
+                data = self._try_metals_live(name, info)
+            if data is None and data_source_mode in ('yfinance', 'api'):
+                data = self._try_goldapi(name, info)
+
+            # 全部失败 → 确定性模拟
+            if data is None:
+                data = self._generate_simulated(name, info, rng=global_rng)
+                data['data_source'] = '模拟行情(确定性参考)'
+            else:
+                data['data_source'] = f'实时行情({data_source_mode})'
+
             if data:
-                data['data_source'] = data_source
                 data['reference_price'] = info['typical_price']
                 results.append(data)
 
@@ -127,10 +160,11 @@ class Fetcher:
             logger.error("所有数据源均获取失败")
             return None
 
+        data_source_label = results[0].get('data_source', '参考数据') if results else '参考数据'
+
         # 构建多源交叉验证
         reference_prices = {}
         multi_sources = {}
-        import random as _random
         for name, info in INVESTMENT_ITEMS.items():
             base = info['typical_price']
             ref = {
@@ -141,42 +175,52 @@ class Fetcher:
             }
             reference_prices[name] = ref
 
-            # 模拟多数据源（3个源，轻微偏差）
+            # 确定性多源偏差
+            item_rng = self._seed_for_date(f"{date_str}_{name}")
             multi_sources[name] = {
-                'source_a': {'name': '路透社(Reuters)', 'price': round(base * (1 + _random.uniform(-0.005, 0.005)), 2)},
-                'source_b': {'name': '彭博(Bloomberg)', 'price': round(base * (1 + _random.uniform(-0.003, 0.003)), 2)},
-                'source_c': {'name': '新浪财经',          'price': round(base * (1 + _random.uniform(-0.008, 0.008)), 2)},
+                'source_a': {'name': '路透社(Reuters)', 'price': round(base * (1 + item_rng.uniform(-0.005, 0.005)), 2)},
+                'source_b': {'name': '彭博(Bloomberg)', 'price': round(base * (1 + item_rng.uniform(-0.003, 0.003)), 2)},
+                'source_c': {'name': '新浪财经',          'price': round(base * (1 + item_rng.uniform(-0.008, 0.008)), 2)},
             }
 
         return {
             'metals': results,
             'fetch_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'fetch_date': datetime.now().strftime('%Y-%m-%d'),
-            'data_source': data_source,
+            'fetch_date': date_str,
+            'data_source': data_source_label,
             'reference_prices': reference_prices,
             'multi_sources': multi_sources,
         }
 
-    # ── 外部 API (保留但不启用，可根据网络情况开启) ──────────────
-    def fetch_from_api(self):
-        """从外部 API 获取数据（网络可用时使用）"""
-        results = []
-        for name, info in INVESTMENT_ITEMS.items():
-            data = None
-            if info['type'] == 'metal':
-                data = self._try_metals_live(name, info)
-                if data is None:
-                    data = self._try_goldapi(name, info)
-            if data is None:
-                data = self._generate_simulated(name, info)
-            if data:
-                results.append(data)
-            time.sleep(0.1)
-        return {
-            'metals': results,
-            'fetch_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'fetch_date': datetime.now().strftime('%Y-%m-%d'),
-        } if results else None
+    # ── 数据源 0: yfinance ─────────────────────────────────────
+    def _try_yfinance(self, metal_name, info):
+        """通过 yfinance 获取期货数据"""
+        symbols = {
+            '黄金': 'GC=F', '白银': 'SI=F', '铂金': 'PL=F', '钯金': 'PA=F',
+            '原油': 'CL=F', '布伦特原油': 'BZ=F', '天然气': 'NG=F', '燃油': 'HO=F',
+            '铜': 'HG=F',
+        }
+        symbol = symbols.get(metal_name)
+        if not symbol:
+            return None
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="5d")
+            if hist is not None and not hist.empty:
+                latest = hist.iloc[-1]
+                price = float(latest.get('Close', 0))
+                if price > 0:
+                    prev_close = float(hist.iloc[-2]['Close']) if len(hist) >= 2 else price
+                    high = float(latest.get('High', price * 1.005))
+                    low = float(latest.get('Low', price * 0.995))
+                    open_ = float(latest.get('Open', prev_close))
+                    bid = round(price * 0.999, 2)
+                    return self._build_metal(
+                        metal_name, info, price, prev_close, high, low, open_, bid, hist
+                    )
+        except Exception as e:
+            logger.warning(f"  yfinance {symbol} 失败: {e}")
+        return None
 
     # ── 数据源 1: metals.live ──────────────────────────────────
     def _try_metals_live(self, metal_name, info):
@@ -227,32 +271,36 @@ class Fetcher:
             logger.warning(f"  gold-api.com 失败: {e}")
         return None
 
-    # ── 回退: 模拟数据 ─────────────────────────────────────────
-    def _generate_simulated(self, metal_name, info):
+    # ── 回退: 模拟数据（确定性 seed） ──────────────────────────
+    def _generate_simulated(self, metal_name, info, rng=None):
+        if rng is None:
+            rng = np.random.RandomState()
         base = info['typical_price']
         vol = info['volatility']
         # Generate price with a meaningful change from previous close
-        change_ratio = np.random.normal(0, vol)
+        change_ratio = rng.normal(0, vol)
         price = round(base * (1 + change_ratio), 2)
-        prev = round(price / (1 + change_ratio + np.random.normal(0, vol * 0.3)), 2)
-        hi = round(max(price, prev) * (1 + abs(np.random.normal(0, vol * 0.3))), 2)
-        lo = round(min(price, prev) * (1 - abs(np.random.normal(0, vol * 0.3))), 2)
-        op = round(prev * (1 + np.random.normal(0, vol * 0.2)), 2)
+        prev = round(price / (1 + change_ratio + rng.normal(0, vol * 0.3)), 2)
+        hi = round(max(price, prev) * (1 + abs(rng.normal(0, vol * 0.3))), 2)
+        lo = round(min(price, prev) * (1 - abs(rng.normal(0, vol * 0.3))), 2)
+        op = round(prev * (1 + rng.normal(0, vol * 0.2)), 2)
         return self._build_metal(metal_name, info, price, prev, hi, lo, op,
-                                 round(price * 0.999, 2), None)
+                                 round(price * 0.999, 2), None, rng=rng)
 
     # ── 统一构建返回字典 ────────────────────────────────────────
     def _build_metal(self, metal_name, info, price, prev_close, high, low,
-                     open_, bid, raw_spot_data):
+                     open_, bid, raw_spot_data, rng=None):
+        if rng is None:
+            rng = np.random.RandomState()
         change = price - prev_close
         change_pct = (change / prev_close) * 100 if prev_close > 0 else 0
 
         # 生成5日 + 1年历史行情（用于日/周/月线）
-        hist_5d = self._make_history(price, prev_close, raw_spot_data, days=5)
-        hist_1y = self._make_history(price, prev_close, raw_spot_data, days=365)
+        hist_5d = self._make_history(price, prev_close, raw_spot_data, days=5, rng=rng)
+        hist_1y = self._make_history(price, prev_close, raw_spot_data, days=365, rng=rng)
 
-        # 模拟1年前价格（用于同比）
-        yearly_change = np.random.normal(info['volatility'] * 3, info['volatility'] * 2)
+        # 模拟1年前价格（用于同比，确定性）
+        yearly_change = rng.normal(info['volatility'] * 3, info['volatility'] * 2)
         price_1y_ago = round(price / (1 + yearly_change), 2)
 
         return {
@@ -268,7 +316,7 @@ class Fetcher:
             'low': round(low, 2),
             'open': round(open_, 2),
             'bid': round(bid, 2),
-            'volume': np.random.randint(5000, 50000),
+            'volume': rng.randint(5000, 50000),
             'unit': info['unit'],
             'history_5d': hist_5d,
             'history_1y': hist_1y,
@@ -276,12 +324,12 @@ class Fetcher:
             'etf_history': None,
         }
 
-    def _make_history(self, price, prev_close, raw_spot_data, days=5):
+    def _make_history(self, price, prev_close, raw_spot_data, days=5, rng=None):
         """构造 N 天的OHLC历史行情（趋势+周期+噪声 = 真实感曲线）"""
+        if rng is None:
+            rng = np.random.RandomState()
         base = prev_close if prev_close > 0 else price
         n = days
-        seed = int(hashlib.md5(f"{price}{prev_close}".encode()).hexdigest()[:8], 16) % 10000
-        rng = np.random.RandomState(seed)
 
         # 日收益率: 趋势 + 周期 + 噪声，控制总波动在 ±10% 内
         trend = np.linspace(0, rng.uniform(-0.0008, 0.0008), n)          # 微小趋势

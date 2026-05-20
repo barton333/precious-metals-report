@@ -3,6 +3,8 @@ import sys
 import os
 import json
 import logging
+import yaml
+from datetime import datetime
 
 # Add the src directory itself to path so 'from fetcher import ...' works
 _src_dir = os.path.dirname(os.path.abspath(__file__))
@@ -21,10 +23,19 @@ app = Flask(__name__,
             template_folder=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'templates'),
             static_folder=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static'))
 
+# Load config
+_config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'settings.yaml')
+_app_config = {}
+try:
+    with open(_config_path, 'r', encoding='utf-8') as f:
+        _app_config = yaml.safe_load(f) or {}
+except Exception:
+    pass
+
 # Global cache
 _data_cache = None
 _analyzed_cache = None
-_ai_cache = {}       # {product_name: {fetch_time, result}}
+_ai_cache = {}       # {product_name: {result}}
 _ai_cache_time = ''  # tracks the fetch_time of cached AI results
 
 
@@ -34,20 +45,41 @@ def ensure_static():
     os.makedirs(static_dir, exist_ok=True)
 
 
+def refresh_data():
+    """强制刷新数据缓存（供调度器或API调用）"""
+    global _data_cache, _analyzed_cache, _ai_cache, _ai_cache_time
+    logger.info("🔄 后台自动刷新数据...")
+    fetcher = Fetcher(_app_config)
+    analyzer = Analyzer()
+    raw = fetcher.fetch_data()
+    if raw:
+        _data_cache = raw
+        _analyzed_cache = analyzer.analyze_data(raw)
+        _ai_cache = {}
+        _ai_cache_time = ''
+        logger.info(f"✅ 数据刷新完成: {raw.get('fetch_time', '')}")
+    else:
+        logger.error("❌ 数据刷新失败")
+    return _analyzed_cache
+
+
+# ── 后台自动刷新调度（APScheduler 可选） ─────────────────────
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    _scheduler = BackgroundScheduler(daemon=True)
+    _scheduler.add_job(refresh_data, 'interval', minutes=5, id='auto_refresh', replace_existing=True)
+    _scheduler.start()
+    logger.info("⏰ 自动刷新已启动（每5分钟）")
+except Exception as e:
+    logger.warning(f"APScheduler 不可用，自动刷新将仅在页面请求时触发: {e}")
+
+
 def get_all_data():
     """获取并缓存全量数据（缓存优先，仅首次或刷新时重新生成）"""
     global _data_cache, _analyzed_cache
     if _data_cache is not None and _analyzed_cache is not None:
         return _analyzed_cache
-
-    fetcher = Fetcher()
-    analyzer = Analyzer()
-
-    raw = fetcher.fetch_data()
-    if raw:
-        _data_cache = raw
-        _analyzed_cache = analyzer.analyze_data(raw)
-    return _analyzed_cache
+    return refresh_data()
 
 
 @app.route('/')
@@ -81,212 +113,255 @@ def index():
 @app.route('/api/data')
 def api_data():
     """API: 获取选中品种的实时数据"""
-    selected = request.args.getlist('selected')
-    if not selected:
-        selected = DEFAULT_SELECTED
+    try:
+        selected = request.args.getlist('selected')
+        if not selected:
+            selected = DEFAULT_SELECTED
 
-    data = get_all_data()
-    if not data:
-        return jsonify({'error': '获取数据失败'}), 500
+        data = get_all_data()
+        if not data:
+            return jsonify({'error': '获取数据失败'}), 500
 
-    metals = data.get('metals', [])
-    filtered = [m for m in metals if m['name'] in selected]
+        metals = data.get('metals', [])
+        filtered = [m for m in metals if m['name'] in selected]
 
-    market = data.get('market_trends', {})
-    # Recalculate for filtered set
-    if filtered:
-        changes = [m['change_pct'] for m in filtered]
-        gainers = sum(1 for c in changes if c > 0)
-        losers = sum(1 for c in changes if c < 0)
-        avg = round(sum(changes) / len(changes), 2) if changes else 0
-        strongest = max(filtered, key=lambda x: x['change_pct']) if filtered else None
-        weakest = min(filtered, key=lambda x: x['change_pct']) if filtered else None
+        market = data.get('market_trends', {})
+        # Recalculate for filtered set
+        if filtered:
+            changes = [m['change_pct'] for m in filtered]
+            gainers = sum(1 for c in changes if c > 0)
+            losers = sum(1 for c in changes if c < 0)
+            avg = round(sum(changes) / len(changes), 2) if changes else 0
+            strongest = max(filtered, key=lambda x: x['change_pct']) if filtered else None
+            weakest = min(filtered, key=lambda x: x['change_pct']) if filtered else None
 
-        if avg > 0.5:
-            sentiment = '看涨 📈'
-        elif avg < -0.5:
-            sentiment = '看跌 📉'
-        else:
-            sentiment = '震荡/中性 ⚖️'
+            if avg > 0.5:
+                sentiment = '看涨 📈'
+            elif avg < -0.5:
+                sentiment = '看跌 📉'
+            else:
+                sentiment = '震荡/中性 ⚖️'
 
-        market = {
-            'overall_sentiment': sentiment,
-            'total_gainers': gainers,
-            'total_losers': losers,
-            'avg_change_pct': avg,
-            'strongest': strongest,
-            'weakest': weakest,
-        }
+            market = {
+                'overall_sentiment': sentiment,
+                'total_gainers': gainers,
+                'total_losers': losers,
+                'avg_change_pct': avg,
+                'strongest': strongest,
+                'weakest': weakest,
+            }
 
-    return jsonify({
-        'metals': filtered,
-        'market_trends': market,
-        'summary': data.get('summary', ''),
-        'fetch_time': data.get('fetch_time', ''),
-        'fetch_date': data.get('fetch_date', ''),
-        'data_source': data.get('data_source', '参考数据'),
-        'reference_prices': data.get('reference_prices', {}),
-        'multi_sources': data.get('multi_sources', {}),
-    })
+        # 筛选联动: reference_prices 和 multi_sources 也只返回选中品种
+        all_refs = data.get('reference_prices', {})
+        all_multis = data.get('multi_sources', {})
+        filtered_refs = {k: v for k, v in all_refs.items() if k in selected}
+        filtered_multis = {k: v for k, v in all_multis.items() if k in selected}
+
+        return jsonify({
+            'metals': filtered,
+            'market_trends': market,
+            'summary': data.get('summary', ''),
+            'fetch_time': data.get('fetch_time', ''),
+            'fetch_date': data.get('fetch_date', ''),
+            'data_source': data.get('data_source', '参考数据'),
+            'reference_prices': filtered_refs,
+            'multi_sources': filtered_multis,
+        })
+    except Exception as e:
+        logger.error(f"/api/data 错误: {e}")
+        return jsonify({'error': f'服务器内部错误: {str(e)}'}), 500
 
 
 @app.route('/api/products')
 def api_products():
     """API: 获取所有可用品种列表"""
-    products = []
-    for key, info in INVESTMENT_ITEMS.items():
-        products.append({
-            'key': key,
-            'name': info['name'],
-            'category': info['category'],
-            'unit': info['unit'],
+    try:
+        products = []
+        for key, info in INVESTMENT_ITEMS.items():
+            products.append({
+                'key': key,
+                'name': info['name'],
+                'category': info['category'],
+                'unit': info['unit'],
+            })
+        return jsonify({
+            'categories': CATEGORIES,
+            'products': products,
+            'default_selected': DEFAULT_SELECTED,
         })
-    return jsonify({
-        'categories': CATEGORIES,
-        'products': products,
-        'default_selected': DEFAULT_SELECTED,
-    })
+    except Exception as e:
+        logger.error(f"/api/products 错误: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/history')
 def api_history():
     """API: 获取走势数据，日线/周线/月线"""
-    selected = request.args.getlist('selected')
-    if not selected:
-        selected = DEFAULT_SELECTED
-    period = request.args.get('period', 'month')
+    try:
+        selected = request.args.getlist('selected')
+        if not selected:
+            selected = DEFAULT_SELECTED
+        period = request.args.get('period', 'month')
 
-    data = get_all_data()
-    if not data:
-        return jsonify({'error': '获取数据失败'}), 500
+        data = get_all_data()
+        if not data:
+            return jsonify({'error': '获取数据失败'}), 500
 
-    global _data_cache
-    if _data_cache is None:
-        return jsonify({'error': '无原始数据'}), 500
+        global _data_cache
+        if _data_cache is None:
+            return jsonify({'error': '无原始数据'}), 500
 
-    result = {}
-    for metal in _data_cache.get('metals', []):
-        if metal['name'] not in selected:
-            continue
+        result = {}
+        for metal in _data_cache.get('metals', []):
+            if metal['name'] not in selected:
+                continue
 
-        hist = metal.get('history_1y')
-        if hist is None or hist.empty:
-            continue
+            hist = metal.get('history_1y')
+            if hist is None or hist.empty:
+                continue
 
-        df = hist.copy()
+            df = hist.copy()
 
-        if period == 'day':
-            # 日线：近1个月（约22个交易日）
-            df = df.tail(22)
-        elif period == 'week':
-            # 周线：近6个月（约26根周K线）
-            df = df.resample('W-FRI').last().dropna()
-            df = df.tail(26)
-        elif period == 'month':
-            # 月线：近1年（约12根月K线）
-            df = df.resample('ME').last().dropna()
-            df = df.tail(12)
+            if period == 'day':
+                # 日线：近1个月（约22个交易日）
+                df = df.tail(22)
+            elif period == 'week':
+                # 周线：近6个月（约26根周K线）
+                df = df.resample('W-FRI').last().dropna()
+                df = df.tail(26)
+            elif period == 'month':
+                # 月线：近1年（约12根月K线）
+                df = df.resample('ME').last().dropna()
+                df = df.tail(12)
 
-        dates = df.index.astype(str).tolist()
-        closes = [round(float(v), 2) for v in df['Close'].tolist()]
-        result[metal['name']] = {
-            'name': metal['full_name'],
-            'dates': dates,
-            'closes': closes,
-        }
+            dates = df.index.astype(str).tolist()
+            closes = [round(float(v), 2) for v in df['Close'].tolist()]
+            result[metal['name']] = {
+                'name': metal['full_name'],
+                'dates': dates,
+                'closes': closes,
+            }
 
-    return jsonify({'history': result, 'period': period})
+        return jsonify({'history': result, 'period': period})
+    except Exception as e:
+        logger.error(f"/api/history 错误: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/analyze/<product_name>')
 def api_analyze(product_name):
     """API: 对指定品种进行AI分析（带缓存，数据不变时复用结果）"""
-    global _ai_cache, _ai_cache_time
+    try:
+        global _ai_cache, _ai_cache_time
 
-    data = get_all_data()
-    if not data:
-        return jsonify({'error': '数据不可用'}), 500
+        data = get_all_data()
+        if not data:
+            return jsonify({'error': '数据不可用'}), 500
 
-    current_time = data.get('fetch_time', '')
+        current_time = data.get('fetch_time', '')
 
-    # 数据时间变了 → 清空整个缓存
-    if current_time != _ai_cache_time:
-        _ai_cache = {}
-        _ai_cache_time = current_time
+        # 数据时间变了 → 清空整个缓存
+        if current_time != _ai_cache_time:
+            _ai_cache = {}
+            _ai_cache_time = current_time
 
-    # 缓存命中
-    if product_name in _ai_cache:
-        return jsonify(_ai_cache[product_name])
+        # 缓存命中
+        if product_name in _ai_cache:
+            return jsonify(_ai_cache[product_name])
 
-    # 查找品种数据
-    metals = data.get('metals', [])
-    target = None
-    for m in metals:
-        if m['name'] == product_name:
-            target = m
-            break
+        # 查找品种数据
+        metals = data.get('metals', [])
+        target = None
+        for m in metals:
+            if m['name'] == product_name:
+                target = m
+                break
 
-    if not target:
-        return jsonify({'error': f'未找到品种: {product_name}'}), 404
+        if not target:
+            return jsonify({'error': f'未找到品种: {product_name}'}), 404
 
-    # 执行分析并缓存
-    result = analyze_product(target)
-    _ai_cache[product_name] = result
-    return jsonify(result)
+        # 执行分析并缓存
+        result = analyze_product(target)
+        _ai_cache[product_name] = result
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"/api/analyze 错误: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/verify')
 def api_verify():
     """API: 价格验证 — 返回当前价与国际参考价的对比 + 多数据源交叉核对"""
-    data = get_all_data()
-    if not data:
-        return jsonify({'error': '无数据'}), 500
+    try:
+        data = get_all_data()
+        if not data:
+            return jsonify({'error': '无数据'}), 500
 
-    metals = data.get('metals', [])
-    refs = data.get('reference_prices', {})
-    multis = data.get('multi_sources', {})
+        metals = data.get('metals', [])
+        refs = data.get('reference_prices', {})
+        multis = data.get('multi_sources', {})
 
-    verification = []
-    for m in metals:
-        name = m['name']
-        ref = refs.get(name, {})
-        ref_price = ref.get('reference_price', 0)
-        current = m['price']
-        deviation = round(((current - ref_price) / ref_price) * 100, 2) if ref_price else 0
-        item = {
-            'name': name,
-            'full_name': m['full_name'],
-            'current_price': current,
-            'reference_price': ref_price,
-            'unit': m['unit'],
-            'deviation_pct': deviation,
-            'source': ref.get('source', '模拟数据'),
-            'status': '正常' if abs(deviation) < 5 else '偏差较大',
-        }
-        # 多源数据
-        if name in multis:
-            item['multi_sources'] = multis[name]
-        verification.append(item)
+        verification = []
+        for m in metals:
+            name = m['name']
+            ref = refs.get(name, {})
+            ref_price = ref.get('reference_price', 0)
+            current = m['price']
+            deviation = round(((current - ref_price) / ref_price) * 100, 2) if ref_price else 0
+            item = {
+                'name': name,
+                'full_name': m['full_name'],
+                'current_price': current,
+                'reference_price': ref_price,
+                'unit': m['unit'],
+                'deviation_pct': deviation,
+                'source': ref.get('source', '模拟数据'),
+                'status': '正常' if abs(deviation) < 5 else '偏差较大',
+            }
+            # 多源数据
+            if name in multis:
+                item['multi_sources'] = multis[name]
+            verification.append(item)
 
-    return jsonify({
-        'data_source': data.get('data_source', '未知'),
-        'fetch_time': data.get('fetch_time', ''),
-        'verification': verification,
-    })
+        return jsonify({
+            'data_source': data.get('data_source', '未知'),
+            'fetch_time': data.get('fetch_time', ''),
+            'verification': verification,
+        })
+    except Exception as e:
+        logger.error(f"/api/verify 错误: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/refresh')
 def api_refresh():
     """API: 强制刷新数据"""
-    global _data_cache, _analyzed_cache, _ai_cache, _ai_cache_time
-    _data_cache = None
-    _analyzed_cache = None
-    _ai_cache = {}
-    _ai_cache_time = ''
-    data = get_all_data()
-    if data:
-        return jsonify({'status': 'ok', 'fetch_time': data.get('fetch_time', '')})
-    return jsonify({'error': '刷新失败'}), 500
+    try:
+        global _data_cache, _analyzed_cache, _ai_cache, _ai_cache_time
+        _data_cache = None
+        _analyzed_cache = None
+        _ai_cache = {}
+        _ai_cache_time = ''
+        data = refresh_data()
+        if data:
+            return jsonify({'status': 'ok', 'fetch_time': data.get('fetch_time', '')})
+        return jsonify({'error': '刷新失败'}), 500
+    except Exception as e:
+        logger.error(f"/api/refresh 错误: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    """全局 500 错误处理器"""
+    logger.error(f"服务器内部错误: {e}")
+    return jsonify({'error': '服务器内部错误，请稍后重试'}), 500
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    """全局 404 错误处理器"""
+    return jsonify({'error': '请求的资源不存在'}), 404
 
 
 if __name__ == '__main__':

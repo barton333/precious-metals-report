@@ -9,6 +9,7 @@ import os
 import logging
 from datetime import datetime
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from fetcher import INVESTMENT_ITEMS, CATEGORIES, DEFAULT_SELECTED, CATEGORY_ICONS
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,10 @@ class Reporter:
                 price_chart=price_chart,
                 trend_chart_5d=trend_chart_5d,
                 trend_chart_1m=trend_chart_1m,
+                categories=CATEGORIES,
+                all_products=INVESTMENT_ITEMS,
+                category_icons=CATEGORY_ICONS,
+                default_selected=DEFAULT_SELECTED,
             )
             return html_content
         except Exception as e:
@@ -155,7 +160,7 @@ class Reporter:
     def _generate_trend_chart(self, items, days=5, title='近5日价格走势'):
         """生成价格趋势折线图"""
         try:
-            hist_key = 'history_5d' if days <= 5 else 'history_1m'
+            hist_key = 'history_5d' if days <= 5 else 'history_1y'
 
             fig, ax = plt.subplots(figsize=(10, 4.5))
             fig.patch.set_facecolor('#1a1a3e')
@@ -170,6 +175,9 @@ class Reporter:
                 hist = item.get(hist_key)
                 if hist is None or len(hist) < 2:
                     continue
+                # Slice to the right number of days when using full history
+                if days > 5 and len(hist) > days:
+                    hist = hist.tail(days)
 
                 closes = hist['Close'].values
                 color = colors_map.get(item['name'], '#888')
@@ -189,10 +197,12 @@ class Reporter:
                 ax.spines[spine].set_visible(False)
             ax.grid(alpha=0.15, color='#888')
 
-            # X-tick labels
+            # X-tick labels (apply same tail slice as data)
             if items and len(items) > 0:
                 sample = items[0].get(hist_key)
                 if sample is not None:
+                    if days > 5 and len(sample) > days:
+                        sample = sample.tail(days)
                     dates = sample.index.strftime('%m/%d')
                     ax.set_xticks(range(len(dates)))
                     ax.set_xticklabels(dates, rotation=45 if days > 5 else 0, fontsize=8)
