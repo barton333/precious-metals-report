@@ -2,7 +2,7 @@ import yaml
 import os
 import sys
 import logging
-from datetime import datetime
+from timesync import strdate as _ts_strdate
 from fetcher import Fetcher
 from analyzer import Analyzer
 from reporter import Reporter
@@ -65,7 +65,7 @@ def main():
     # Save report
     output_dir = config.get('output_dir', 'reports')
     os.makedirs(output_dir, exist_ok=True)
-    today = datetime.now().strftime('%Y%m%d')
+    today = _ts_strdate().replace('-', '')
     output_path = os.path.join(output_dir, f'precious_metals_report_{today}.html')
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html_report)

@@ -3,6 +3,7 @@ import numpy as np
 import logging
 import hashlib
 from datetime import datetime
+from timesync import strftime as _ts_strftime, strdate as _ts_strdate, now as _ts_now
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ class Fetcher:
     def _seed_for_date(self, date_str=None):
         """返回一个按日期确定性的 RandomState"""
         if date_str is None:
-            date_str = datetime.now().strftime('%Y-%m-%d')
+            date_str = _ts_strdate()
         seed = int(hashlib.md5(date_str.encode()).hexdigest()[:8], 16) % 100000
         return np.random.RandomState(seed)
 
@@ -107,7 +108,7 @@ class Fetcher:
         """获取所有投资品种的实时数据（按配置尝试真实源 → 确定性模拟）"""
         results = []
         data_source_mode = self.config.get('data_source', 'simulated')
-        date_str = datetime.now().strftime('%Y-%m-%d')
+        date_str = _ts_strdate()
 
         # 用日期 seed 确保同日运行结果一致
         global_rng = self._seed_for_date(date_str)
@@ -175,7 +176,7 @@ class Fetcher:
 
         return {
             'metals': results,
-            'fetch_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'fetch_time': _ts_strftime(),
             'fetch_date': date_str,
             'data_source': data_source_label,
             'reference_prices': reference_prices,
@@ -397,7 +398,7 @@ class Fetcher:
         price_series = price_series / price_series[-1] * price
 
         closes = price_series
-        dates = pd.date_range(end=datetime.now(), periods=len(closes), freq='D')
+        dates = pd.date_range(end=_ts_now(), periods=len(closes), freq='D')
         vol_arr = np.abs(rng.normal(0, 0.003, len(closes)))
         return pd.DataFrame({
             'Close': closes,

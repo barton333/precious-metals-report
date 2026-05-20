@@ -1,7 +1,7 @@
 """AI投资分析模块 - 基于技术指标生成趋势预测和投资建议"""
 import numpy as np
 import logging
-from datetime import datetime
+from timesync import strftime as _ts_strftime
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def analyze_product(metal_data):
             'product_name': name,
             'current_price': price,
             'unit': unit,
-            'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'analysis_time': _ts_strftime(),
             'score': 50,  # 综合评分 0-100
         }
 
@@ -67,7 +67,7 @@ def analyze_product(metal_data):
         return {
             'product_name': metal_data.get('name', '未知'),
             'error': str(e),
-            'analysis_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'analysis_time': _ts_strftime(),
         }
 
 
