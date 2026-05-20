@@ -1,20 +1,13 @@
-import requests
 import pandas as pd
 import numpy as np
 import logging
-import time
-import re
 import hashlib
-from datetime import datetime, timedelta
-
-# Optional yfinance
-try:
-    import yfinance as yf
-    _HAS_YFINANCE = True
-except ImportError:
-    _HAS_YFINANCE = False
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# yfinance 懒加载（import 可能在网络环境慢甚至挂死）
+_HAS_YFINANCE = None
 
 # Free precious metals API (no API key required)
 METALS_API = "https://api.metals.live/v1/spot"
@@ -31,9 +24,9 @@ CATEGORY_ICONS = {
 INVESTMENT_ITEMS = {
     # ── 贵金属 ──
     '黄金':     {'endpoint': 'gold',      'name': '黄金 (Gold)',         'unit': '美元/盎司',
-                 'category': '贵金属',     'typical_price': 4480.43,     'volatility': 0.012},
+                 'category': '贵金属',     'typical_price': 2330.00,     'volatility': 0.012},
     '白银':     {'endpoint': 'silver',    'name': '白银 (Silver)',       'unit': '美元/盎司',
-                 'category': '贵金属',     'typical_price': 73.667,      'volatility': 0.018},
+                 'category': '贵金属',     'typical_price': 29.50,       'volatility': 0.018},
     '铂金':     {'endpoint': 'platinum',  'name': '铂金 (Platinum)',     'unit': '美元/盎司',
                  'category': '贵金属',     'typical_price': 960,         'volatility': 0.010},
     '钯金':     {'endpoint': 'palladium', 'name': '钯金 (Palladium)',    'unit': '美元/盎司',
@@ -44,13 +37,13 @@ INVESTMENT_ITEMS = {
                  'category': '贵金属',     'typical_price': 4850,        'volatility': 0.022},
     # ── 能源 ──
     '原油':     {'endpoint': 'oil',       'name': '原油 (Crude Oil WTI)','unit': '美元/桶',
-                 'category': '能源',       'typical_price': 103.31,      'volatility': 0.025},
+                 'category': '能源',       'typical_price': 79.50,       'volatility': 0.025},
     '布伦特原油':{'endpoint': 'brent',     'name': '布伦特原油 (Brent)',  'unit': '美元/桶',
-                 'category': '能源',       'typical_price': 107.47,      'volatility': 0.022},
+                 'category': '能源',       'typical_price': 83.50,       'volatility': 0.022},
     '天然气':   {'endpoint': 'gas',       'name': '天然气 (Natural Gas)','unit': '美元/百万英热',
                  'category': '能源',       'typical_price': 2.85,        'volatility': 0.030},
     '燃油':     {'endpoint': 'heating_oil','name': '燃油 (Heating Oil)',  'unit': '美元/加仑',
-                 'category': '能源',       'typical_price': 2.95,        'volatility': 0.028},
+                 'category': '能源',       'typical_price': 2.65,        'volatility': 0.028},
     # ── 基本金属 ──
     '铜':       {'endpoint': 'copper',    'name': '铜 (Copper)',         'unit': '美元/磅',
                  'category': '基本金属',   'typical_price': 6.197,       'volatility': 0.018},
@@ -99,23 +92,9 @@ INVESTMENT_ITEMS = {
 CATEGORIES = sorted(set(v['category'] for v in INVESTMENT_ITEMS.values()))
 DEFAULT_SELECTED = ['黄金', '白银', '铂金', '钯金', '原油']
 
-HEADERS = {
-    'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                   'AppleWebKit/537.36 (KHTML, like Gecko) '
-                   'Chrome/120.0.0.0 Safari/537.36'),
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-}
-
-
 class Fetcher:
     def __init__(self, config=None):
         self.config = config or {}
-        self.session = requests.Session()
-        self.session.headers.update(HEADERS)
-
-    def _get(self, url, timeout=5):
-        return self.session.get(url, timeout=timeout)
 
     def _seed_for_date(self, date_str=None):
         """返回一个按日期确定性的 RandomState"""
@@ -133,24 +112,29 @@ class Fetcher:
         # 用日期 seed 确保同日运行结果一致
         global_rng = self._seed_for_date(date_str)
 
+        real_count = 0
+        total_count = len(INVESTMENT_ITEMS)
+
         for name, info in INVESTMENT_ITEMS.items():
             logger.info(f"正在获取 {name} 数据...")
             data = None
 
-            # 按配置尝试真实数据源
-            if data_source_mode == 'yfinance' and _HAS_YFINANCE:
-                data = self._try_yfinance(name, info)
-            if data is None and data_source_mode in ('yfinance', 'api'):
-                data = self._try_metals_live(name, info)
-            if data is None and data_source_mode in ('yfinance', 'api'):
-                data = self._try_goldapi(name, info)
+            # 只在有注册数据源的品种上发起网络请求
+            if data_source_mode in ('yfinance', 'api') and name in self._REAL_SOURCES:
+                for method_name in self._REAL_SOURCES[name]:
+                    method = getattr(self, method_name, None)
+                    if method:
+                        data = method(name, info)
+                        if data is not None:
+                            break
 
             # 全部失败 → 确定性模拟
             if data is None:
                 data = self._generate_simulated(name, info, rng=global_rng)
-                data['data_source'] = '模拟行情(确定性参考)'
+                data['data_source'] = '模拟行情'
             else:
-                data['data_source'] = f'实时行情({data_source_mode})'
+                data['data_source'] = '实时行情'
+                real_count += 1
 
             if data:
                 data['reference_price'] = info['typical_price']
@@ -160,7 +144,13 @@ class Fetcher:
             logger.error("所有数据源均获取失败")
             return None
 
-        data_source_label = results[0].get('data_source', '参考数据') if results else '参考数据'
+        # 计算混合模式标签
+        if real_count == total_count:
+            data_source_label = f'实时行情({total_count}品种全实时)'
+        elif real_count > 0:
+            data_source_label = f'实时({real_count}品) + 模拟({total_count - real_count}品) 混合'
+        else:
+            data_source_label = '模拟行情(无实时源可用)'
 
         # 构建多源交叉验证
         reference_prices = {}
@@ -192,9 +182,124 @@ class Fetcher:
             'multi_sources': multi_sources,
         }
 
-    # ── 数据源 0: yfinance ─────────────────────────────────────
+    def _fetch_url(self, url, timeout=2):
+        """轻量 HTTP GET — 只用 urllib（requests session 在此环境 SSL 初始化慢）"""
+        import urllib.request
+        import json
+        import ssl
+        ctx = ssl._create_unverified_context()
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            r = urllib.request.urlopen(req, timeout=timeout, context=ctx)
+            body = r.read().decode('utf-8')
+            class _Resp:
+                def __init__(self, data):
+                    self._data = data
+                    self.status_code = 200
+                    self.ok = True
+                def json(self):
+                    return json.loads(self._data)
+            return _Resp(body)
+        except Exception as e:
+            logger.debug(f"_fetch_url {url}: {e}")
+            return None
+
+    # ── 数据源 0: gold-api.com（测试验证工作最稳定）─────────────
+    def _try_goldapi(self, metal_name, info):
+        """gold-api.com — 支持 黄金/白银/铂金/钯金"""
+        symbols = {'黄金': 'XAU', '白银': 'XAG', '铂金': 'XPT', '钯金': 'XPD'}
+        symbol = symbols.get(metal_name)
+        if not symbol:
+            return None
+        try:
+            url = f"https://api.gold-api.com/price/{symbol}"
+            resp = self._fetch_url(url)
+            if resp and resp.status_code == 200:
+                j = resp.json()
+                price = float(j.get('price', 0))
+                if price > 0:
+                    prev = float(j.get('previousClose', 0)) or price
+                    hi = float(j.get('high', 0)) or (price * 1.008)
+                    lo = float(j.get('low', 0)) or (price * 0.992)
+                    op = float(j.get('open', 0)) or prev
+                    return self._build_metal(
+                        metal_name, info, price, prev, hi, lo, op,
+                        price * 0.999, None
+                    )
+        except Exception as e:
+            logger.warning(f"  gold-api.com {symbol} 失败: {e}")
+        return None
+
+    # ── 数据源列表（品种名 → 可用的获取函数） ────────────────
+    # 只在有实时数据源的品种上发起网络请求，其余直接走模拟
+    _REAL_SOURCES = {
+        '黄金': ['_try_goldapi'],
+        '白银': ['_try_goldapi'],
+        '铂金': ['_try_goldapi'],
+        '钯金': ['_try_goldapi'],
+        # metals.live SSL 故障暂禁用；yfinance 频繁限流暂禁用
+        # 可自行启用: '原油': ['_try_metals_live', '_try_yfinance'],
+    }
+
+    def _try_goldapi(self, metal_name, info):
+        """gold-api.com — 仅支持 黄金/白银/铂金/钯金"""
+        symbols = {'黄金': 'XAU', '白银': 'XAG', '铂金': 'XPT', '钯金': 'XPD'}
+        symbol = symbols.get(metal_name)
+        if not symbol:
+            return None
+        try:
+            url = f"https://api.gold-api.com/price/{symbol}"
+            resp = self._fetch_url(url)
+            if resp and resp.status_code == 200:
+                j = resp.json()
+                price = float(j.get('price', 0))
+                if price > 0:
+                    prev = float(j.get('previousClose', 0)) or price
+                    hi = float(j.get('high', 0)) or (price * 1.008)
+                    lo = float(j.get('low', 0)) or (price * 0.992)
+                    op = float(j.get('open', 0)) or prev
+                    return self._build_metal(metal_name, info, price, prev, hi, lo, op, price * 0.999, None)
+        except Exception as e:
+            logger.warning(f"  gold-api {symbol} 失败: {e}")
+        return None
+
+    def _try_metals_live(self, metal_name, info):
+        """metals.live — 免费无 key（SSL 问题多，超时短）"""
+        try:
+            url = f"https://api.metals.live/v1/spot/{info['endpoint']}"
+            resp = self._fetch_url(url, timeout=2)
+            if resp is None:
+                return None
+            data = resp.json()
+            if isinstance(data, list) and len(data) > 0:
+                latest = data[-1]
+                price = float(latest.get('ask', 0)) or float(latest.get('bid', 0))
+                if price > 0:
+                    prev_close = float(latest.get('previousClose', 0)) or price
+                    high = float(latest.get('high', 0)) or (price * 1.008)
+                    low = float(latest.get('low', 0)) or (price * 0.992)
+                    open_ = float(latest.get('open', 0)) or prev_close
+                    return self._build_metal(metal_name, info, price, prev_close, high, low, open_, price * 0.999, data)
+        except Exception as e:
+            logger.debug(f"  metals.live {info['endpoint']}: {e}")
+        return None
+
+    # yfinance 句柄缓存（懒加载）
+    _yf = None
+
     def _try_yfinance(self, metal_name, info):
-        """通过 yfinance 获取期货数据"""
+        """yfinance — 支持 9 个期货品种（常被限流）"""
+        global _HAS_YFINANCE
+        if _HAS_YFINANCE is None:
+            try:
+                import yfinance as yf_module
+                Fetcher._yf = yf_module
+                _HAS_YFINANCE = True
+            except Exception:
+                _HAS_YFINANCE = False
+        if not _HAS_YFINANCE or Fetcher._yf is None:
+            return None
+        yf = Fetcher._yf
         symbols = {
             '黄金': 'GC=F', '白银': 'SI=F', '铂金': 'PL=F', '钯金': 'PA=F',
             '原油': 'CL=F', '布伦特原油': 'BZ=F', '天然气': 'NG=F', '燃油': 'HO=F',
@@ -214,61 +319,9 @@ class Fetcher:
                     high = float(latest.get('High', price * 1.005))
                     low = float(latest.get('Low', price * 0.995))
                     open_ = float(latest.get('Open', prev_close))
-                    bid = round(price * 0.999, 2)
-                    return self._build_metal(
-                        metal_name, info, price, prev_close, high, low, open_, bid, hist
-                    )
+                    return self._build_metal(metal_name, info, price, prev_close, high, low, open_, round(price * 0.999, 2), hist)
         except Exception as e:
-            logger.warning(f"  yfinance {symbol} 失败: {e}")
-        return None
-
-    # ── 数据源 1: metals.live ──────────────────────────────────
-    def _try_metals_live(self, metal_name, info):
-        try:
-            url = f"{METALS_API}/{info['endpoint']}"
-            resp = self._get(url)
-            resp.raise_for_status()
-            data = resp.json()
-            if isinstance(data, list) and len(data) > 0:
-                latest = data[-1]
-                ask = float(latest.get('ask', 0))
-                bid = float(latest.get('bid', 0))
-                price = ask if ask > 0 else bid
-                prev_close = float(latest.get('previousClose', 0))
-                high = float(latest.get('high', 0))
-                low = float(latest.get('low', 0))
-                open_ = float(latest.get('open', 0))
-
-                if price > 0:
-                    return self._build_metal(
-                        metal_name, info, price, prev_close or price,
-                        high or (price * 1.008), low or (price * 0.992),
-                        open_ or (price * 0.998), bid, data
-                    )
-        except Exception as e:
-            logger.warning(f"  metals.live 失败: {e}")
-        return None
-
-    # ── 数据源 2: gold-api.com ─────────────────────────────────
-    def _try_goldapi(self, metal_name, info):
-        symbols = {'黄金': 'XAU', '白银': 'XAG', '铂金': 'XPT', '钯金': 'XPD'}
-        try:
-            url = f"https://api.gold-api.com/price/{symbols[metal_name]}"
-            resp = self._get(url)
-            if resp.status_code == 200:
-                j = resp.json()
-                price = float(j.get('price', 0))
-                if price > 0:
-                    prev = float(j.get('previousClose', 0)) or price
-                    hi = float(j.get('high', 0)) or (price * 1.008)
-                    lo = float(j.get('low', 0)) or (price * 0.992)
-                    op = float(j.get('open', 0)) or prev
-                    return self._build_metal(
-                        metal_name, info, price, prev, hi, lo, op,
-                        price * 0.999, None
-                    )
-        except Exception as e:
-            logger.warning(f"  gold-api.com 失败: {e}")
+            logger.debug(f"  yfinance {symbol}: {e}")
         return None
 
     # ── 回退: 模拟数据（确定性 seed） ──────────────────────────
@@ -351,5 +404,5 @@ class Fetcher:
             'High': closes * (1 + vol_arr),
             'Low': closes * (1 - vol_arr),
             'Open': closes * (1 + rng.normal(0, 0.002, len(closes))),
-            'Volume': np.random.randint(3000, 60000, len(closes)),
+            'Volume': rng.randint(3000, 60000, len(closes)),
         }, index=dates)

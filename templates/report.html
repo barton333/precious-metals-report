@@ -13,7 +13,7 @@
 <div class="header">
 <h1>📈 贵金属与主流投资品种日报</h1>
 <div class="subtitle">实时刷新、品种选择、AI 智能分析</div>
-<div class="meta">当前数据时间：{{ fetch_date }} {{ fetch_time }} | 自动刷新间隔：5 分钟 | <span id="dataSourceBadge" style="color:#8efc7f;">数据源: 模拟行情</span></div>
+<div class="meta">数据时间：<span id="fetchTimeDisplay">{{ fetch_time }}</span> <span id="dataAgeBadge" style="color:#8efc7f;font-size:0.85em;">● 实时</span> | 自动刷新中 (5分钟) | <span id="dataSourceBadge" style="color:#8efc7f;">数据源: 模拟行情</span></div>
 </div>
 
 <div class="controls-panel">
@@ -142,6 +142,34 @@
     </div>
     <div class="collapsible-body" id="verifyContent" style="color:#d8dff3;font-size:0.85em;line-height:1.6;padding:8px 4px;">加载中...</div>
 </div>
+
+<!-- Matplotlib 静态图表（仅在 CLI 预渲染时嵌入） -->
+{% if price_chart %}
+<div class="chart-section panel-with-collapse">
+<div class="chart-header collapsible-header">
+  <span>📊 价格与涨跌幅对比</span>
+  <span class="collapse-icon">▼</span>
+</div>
+<div class="collapsible-body">
+  <img src="data:image/png;base64,{{ price_chart }}" alt="价格对比图" style="width:100%;max-width:100%;border-radius:12px;">
+</div>
+</div>
+
+<div class="chart-section panel-with-collapse">
+<div class="chart-header collapsible-header">
+  <span>📈 趋势图组合</span>
+  <span class="collapse-icon">▼</span>
+</div>
+<div class="collapsible-body" style="display:grid;gap:16px;">
+{% if trend_chart_5d %}
+  <img src="data:image/png;base64,{{ trend_chart_5d }}" alt="近5日走势" style="width:100%;max-width:100%;border-radius:12px;">
+{% endif %}
+{% if trend_chart_1m %}
+  <img src="data:image/png;base64,{{ trend_chart_1m }}" alt="近1月走势" style="width:100%;max-width:100%;border-radius:12px;">
+{% endif %}
+</div>
+</div>
+{% endif %}
 
 <div class="chart-section panel-with-collapse">
 <div class="chart-header collapsible-header">

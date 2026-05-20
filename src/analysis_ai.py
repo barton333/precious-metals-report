@@ -1,7 +1,7 @@
 """AI投资分析模块 - 基于技术指标生成趋势预测和投资建议"""
 import numpy as np
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

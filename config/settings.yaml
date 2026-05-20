@@ -1,8 +1,7 @@
 # 数据源配置
-# 可选: "yfinance" (先尝试yfinance, 失败后依次尝试metals.live/gold-api → 模拟)
-#       "api"     (尝试metals.live/gold-api → 模拟)
-#       "simulated" (纯确定性模拟, 无网络请求)
-data_source: "simulated"
+# 可选: "api"        — 优先从 gold-api.com 获取实时数据（黄金/白银/铂金/钯金），其余 + 失败时用确定性模拟
+#       "simulated"  — 纯确定性模拟（基于 typical_price + 日期 seed，无需网络，同日运行结果一致）
+data_source: "api"
 
 # 报告模板路径
 report_template: "templates/report.html"

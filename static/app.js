@@ -146,12 +146,49 @@
     document.getElementById('summaryText').textContent = text || '当前暂无摘要信息。';
   }
 
+  var _lastFetchTime = null;
+
   function updateMeta(d, t, source) {
-    var meta = document.querySelector('.header .meta');
-    var sourceText = source || '模拟行情';
-    var color = sourceText.indexOf('实时') >= 0 ? '#8efc7f' : '#ffd700';
-    meta.innerHTML = '当前数据时间：' + (d || '--') + ' ' + (t || '--') +
-      ' | 自动刷新间隔：5 分钟 | <span id="dataSourceBadge" style="color:' + color + ';">数据源: ' + sourceText + '</span>';
+    var displayTime = document.getElementById('fetchTimeDisplay');
+    if (displayTime) displayTime.textContent = t || '--';
+    var badge = document.getElementById('dataSourceBadge');
+    if (badge) {
+      var sourceText = source || '模拟行情';
+      badge.style.color = sourceText.indexOf('实时') >= 0 ? '#8efc7f' : '#ffd700';
+      badge.textContent = '数据源: ' + sourceText;
+    }
+    if (t) _lastFetchTime = t;
+  }
+
+  // 每分钟更新数据年龄指示
+  function updateDataAge() {
+    var badge = document.getElementById('dataAgeBadge');
+    if (!badge) return;
+    if (!_lastFetchTime) {
+      badge.textContent = '● 未知';
+      badge.style.color = '#ff8d8d';
+      return;
+    }
+    var now = new Date();
+    var fetchDate = new Date(_lastFetchTime.replace(/-/g, '/'));
+    var diffMs = now - fetchDate;
+    var diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) {
+      badge.textContent = '● 刚刚';
+      badge.style.color = '#8efc7f';
+    } else if (diffMin < 3) {
+      badge.textContent = '● ' + diffMin + '分钟前';
+      badge.style.color = '#8efc7f';
+    } else if (diffMin < 6) {
+      badge.textContent = '● ' + diffMin + '分钟前';
+      badge.style.color = '#ffd700';
+    } else if (diffMin < 15) {
+      badge.textContent = '● ' + diffMin + '分钟前 (数据可能过时)';
+      badge.style.color = '#ff8d8d';
+    } else {
+      badge.textContent = '⚠️ ' + diffMin + '分钟前 (请刷新)';
+      badge.style.color = '#ff6b6b';
+    }
   }
 
   // ── 表格列排序 ──
@@ -470,7 +507,9 @@
           }
         } catch (e) { /* ignore */ }
 
-        header.onclick = function () {
+        header.onclick = function (e) {
+          // 点击内部按钮（period-btn / AI分析）时不触发折叠
+          if (e.target.closest('.period-btn') || e.target.closest('button') || e.target.closest('a')) return;
           var isCollapsed = body.classList.contains('collapsed');
           if (isCollapsed) {
             body.classList.remove('collapsed');
@@ -541,6 +580,10 @@
     // Initial load
     setTimeout(loadData, 300);
     setTimeout(loadChart, 1000);
+
+    // Data age indicator — update every 30s
+    updateDataAge();
+    setInterval(updateDataAge, 30000);
 
     // Auto-refresh every 5 min (frontend pulls fresh data via API)
     setInterval(function () { loadData(); setTimeout(loadChart, 500); }, 300000);
